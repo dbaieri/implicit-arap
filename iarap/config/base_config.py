@@ -1,3 +1,4 @@
+from types import ModuleType
 from typing import Tuple, Type, Any
 from dataclasses import dataclass
 
@@ -29,3 +30,20 @@ class InstantiateConfig(PrintableConfig):
     def setup(self, **kwargs) -> Any:
         """Returns the instantiated object using the config."""
         return self._target(self, **kwargs)
+    
+
+@dataclass
+class FactoryConfig(PrintableConfig):
+    """Config class for instantiating objects given their class name and module."""
+
+    _name: str
+    _module: ModuleType
+
+    def setup(self, **kwargs) -> Any:
+        """Returns the instantiated object using the config."""
+        target = getattr(self._module, self._name)
+        add_kwargs = vars(self).copy()
+        add_kwargs.pop("_module")
+        add_kwargs.pop("_name")
+        add_kwargs.update(kwargs)
+        return target(**add_kwargs)

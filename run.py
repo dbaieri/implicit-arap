@@ -7,12 +7,13 @@ from iarap.train import SDFTrainerConfig, DeformTrainerConfig
 
 
 
-Commands = tyro.conf.FlagConversionOff[
+
+Commands = tyro.conf.SuppressFixed[tyro.conf.FlagConversionOff[
     Union[
         Annotated[SDFTrainerConfig, tyro.conf.subcommand(name="train-sdf")],
         Annotated[DeformTrainerConfig, tyro.conf.subcommand(name='deform-sdf')]
     ]
-]
+]]
 
 
 def entrypoint():

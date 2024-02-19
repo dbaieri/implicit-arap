@@ -3,34 +3,43 @@ import trimesh
 import kaolin as kal
 
 from pathlib import Path
-from typing import Literal, Dict
+from typing import Literal, Dict, Type
 from torch import Tensor
 from jaxtyping import Float
 from torch.utils.data import Dataset
+from dataclasses import dataclass, field
+
+from iarap.config.base_config import InstantiateConfig
+
+
+@dataclass
+class MeshDataConfig(InstantiateConfig):
+
+    _target: Type = field(default_factory=lambda: MeshData)
+    file: Path = Path('./assets/armadillo.ply')
+    surf_sample: int = 8192
+    space_sample: int = 8192
+    noise_scale: float = 0.05
+    device: Literal['cpu', 'cuda'] = 'cpu'
 
 
 
 class MeshData(Dataset):
 
-    def __init__(self, 
-                 file: Path,
-                 surf_sample: int,
-                 space_sample: int,
-                 noise_scale: float,
-                 device: Literal['cpu', 'cuda'] = 'cpu'):
+    def __init__(self, config: MeshDataConfig):
         super(MeshData, self).__init__()
-        mesh: trimesh.Trimesh = trimesh.load(file, force='mesh')
-        centroid = torch.tensor(mesh.centroid, device=device)
+        mesh: trimesh.Trimesh = trimesh.load(config.file, force='mesh')
+        centroid = torch.tensor(mesh.centroid, device=config.device)
         verts = torch.tensor(mesh.vertices)
         faces = torch.tensor(mesh.faces)
-        self.geometry = kal.rep.SurfaceMesh(verts, faces).to(device)
+        self.geometry = kal.rep.SurfaceMesh(verts, faces).to(config.device)
         self.normalize(centroid, 0.8)
-        self.surf_sample = surf_sample
-        self.space_sample = space_sample
+        self.surf_sample = config.surf_sample
+        self.space_sample = config.space_sample
         self.uniform_ratio = 1/8
-        self.noise_scale = noise_scale
-        self.domain = torch.tensor([[-1, -1, -1], [1, 1, 1]]).to(device)
-        self.device = device
+        self.noise_scale = config.noise_scale
+        self.domain = torch.tensor([[-1, -1, -1], [1, 1, 1]]).to(config.device)
+        self.device = config.device
 
     def normalize(self, shift: Float[Tensor, "3"], domain_ratio: float):
         self.geometry.vertices -= shift.unsqueeze(0)

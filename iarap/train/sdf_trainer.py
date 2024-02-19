@@ -8,6 +8,9 @@ from dataclasses import dataclass, field
 from tqdm import tqdm
 
 from iarap.config.base_config import InstantiateConfig
+from iarap.data.mesh import MeshDataConfig
+from iarap.model.sdf import NeuralSDFConfig
+from iarap.train.optim import AdamConfig, MultiStepSchedulerConfig
 
 
 
@@ -17,18 +20,20 @@ class SDFTrainer:
         
         self.config = config
 
-        self.make_data()
-        self.make_model()
-        self.make_optimizers()
+        self.setup_data()
+        self.setup_model()
+        self.setup_optimizer()
 
-    def make_data(self):
-        pass
+    def setup_data(self):
+        self.data = self.config.data.setup()
 
-    def make_model(self):
-        pass
+    def setup_model(self):
+        self.model = self.config.model.setup()
 
-    def make_optimizers(self):
-        pass
+    def setup_optimizer(self):
+        param_groups = list(self.model.parameters())
+        self.optimizer = self.config.optimizer.setup(params=param_groups)
+        self.scheduler = self.config.scheduler.setup(optimizer=self.optimizer)
 
     def run(self):
         print(self.config)
@@ -42,6 +47,8 @@ class SDFTrainer:
 class SDFTrainerConfig(InstantiateConfig):
 
     _target: Type = field(default_factory=lambda: SDFTrainer)
-
     num_steps: int = 1
-
+    data: MeshDataConfig = MeshDataConfig()
+    model: NeuralSDFConfig = NeuralSDFConfig()
+    optimizer: AdamConfig = AdamConfig()
+    scheduler: MultiStepSchedulerConfig = MultiStepSchedulerConfig()

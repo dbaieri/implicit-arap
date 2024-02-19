@@ -26,7 +26,7 @@ class MLP(nn.Module):
         layer_width: int,
         out_dim: Optional[int] = None,
         skip_connections: Optional[Tuple[int]] = None,
-        activation: Optional[str] = 'ReLU',
+        activation: Optional[nn.Module] = nn.ReLU(),
         out_activation: Optional[str] = None,
     ) -> None:
         super(MLP, self).__init__()
@@ -39,7 +39,6 @@ class MLP(nn.Module):
         self._skip_connections: Set[int] = set(skip_connections) if skip_connections else set()
         self.activation = activation
         self.out_activation = out_activation
-        self.net = None
 
         self.build_nn_modules()
 
