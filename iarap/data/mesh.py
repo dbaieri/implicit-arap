@@ -16,15 +16,16 @@ from iarap.config.base_config import InstantiateConfig
 class MeshDataConfig(InstantiateConfig):
 
     _target: Type = field(default_factory=lambda: MeshData)
-    file: Path = Path('./assets/armadillo.ply')
-    surf_sample: int = 8192
-    space_sample: int = 8192
-    noise_scale: float = 0.05
-    device: Literal['cpu', 'cuda'] = 'cpu'
+    file: Path = Path('./assets/mesh/armadillo.ply')
+    surf_sample: int = 16384
+    space_sample: int = 16384
+    uniform_ratio: float = 1/8
+    local_noise_scale: float = 0.05
+    device: Literal['cpu', 'cuda'] = 'cuda'
 
 
 
-class MeshData(Dataset):
+class MeshData:
 
     def __init__(self, config: MeshDataConfig):
         super(MeshData, self).__init__()
@@ -32,35 +33,48 @@ class MeshData(Dataset):
         centroid = torch.tensor(mesh.centroid, device=config.device)
         verts = torch.tensor(mesh.vertices)
         faces = torch.tensor(mesh.faces)
-        self.geometry = kal.rep.SurfaceMesh(verts, faces).to(config.device)
+        self.geometry = kal.rep.SurfaceMesh(verts, faces).to_batched().to(config.device)
         self.normalize(centroid, 0.8)
         self.surf_sample = config.surf_sample
         self.space_sample = config.space_sample
-        self.uniform_ratio = 1/8
-        self.noise_scale = config.noise_scale
+        assert self.space_sample <= self.surf_sample
+        self.uniform_ratio = config.uniform_ratio
+        self.noise_scale = config.local_noise_scale
         self.domain = torch.tensor([[-1, -1, -1], [1, 1, 1]]).to(config.device)
         self.device = config.device
+        self.dataset = MeshDataset(self)
 
     def normalize(self, shift: Float[Tensor, "3"], domain_ratio: float):
         self.geometry.vertices -= shift.unsqueeze(0)
         self.geometry.vertices /= self.geometry.vertices.abs().max()
         self.geometry.vertices *= domain_ratio
 
-    def len(self):
+
+class MeshDataset(Dataset):
+
+    def __init__(self, mesh: MeshData):
+        super(MeshDataset, self).__init__()
+        self.mesh = mesh
+
+    def __len__(self):
         return 1
     
     def __getitem__(self, index) -> Dict[str, Float[Tensor, "*batch d"]]:
-        surf_sample, face_idx = kal.ops.mesh.sample_points(self.geometry.vertices, 
-                                                           self.geometry.faces)
-        normal_sample = self.geometry.face_normals.mean(dim=-2)[face_idx]
+        surf_sample, face_idx = kal.ops.mesh.sample_points(self.mesh.geometry.vertices, 
+                                                           self.mesh.geometry.faces,
+                                                           self.mesh.surf_sample)
+        surf_sample, face_idx = surf_sample.squeeze().float(), face_idx.squeeze()
+        normal_sample = self.mesh.geometry.face_normals.mean(dim=-2)[0, face_idx].float()
         
-        unif_sample = torch.rand(int(self.space_sample * self.uniform_ratio), 3, device=self.device) 
-        shift = self.domain[0:1, :]
-        scale = self.domain[1:, :] - shift
+        n_uniform = int(self.mesh.space_sample * self.mesh.uniform_ratio)
+        unif_sample = torch.rand(n_uniform, 3, device=self.mesh.device) 
+        shift = self.mesh.domain[0:1, :]
+        scale = self.mesh.domain[1:, :] - shift
         unif_sample = (unif_sample * scale) + shift
 
-        gauss_sample = torch.randn(int(self.space_sample * (1 - self.uniform_ratio)), 3, device=self.device) 
-        gauss_sample = surf_sample + gauss_sample * self.noise_scale
+        n_gaussian = int(self.mesh.space_sample * (1 - self.mesh.uniform_ratio))
+        gauss_sample = torch.randn(n_gaussian, 3, device=self.mesh.device) 
+        gauss_sample = surf_sample[:n_gaussian, :] + gauss_sample * self.mesh.noise_scale
 
         return {
             'surface_sample': surf_sample,

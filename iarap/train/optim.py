@@ -31,5 +31,5 @@ class SchedulerConfig(FactoryConfig):
 class MultiStepSchedulerConfig(SchedulerConfig):
 
     _name: str = 'MultiStepLR'
-    milestones: Tuple[int] = (0,)
+    milestones: Tuple[int] = (1000, 2000, 5000)
     gamma: float = 0.5

@@ -52,15 +52,15 @@ class NeuralSDF(SDF):
     def __init__(self, config: NeuralSDFConfig):
         super(NeuralSDF, self).__init__(config.in_dim)
         self.config = config
-        self.network = MLP(self.config.in_dim,
+        self.encoding = FourierFeatsEncoding(self.config.in_dim,
+                                             self.config.num_frequencies,
+                                             self.config.encoding_with_input)
+        self.network = MLP(self.encoding.get_out_dim(),
                            self.config.num_layers,
                            self.config.layer_width,
                            self.config.out_dim,
                            self.config.skip_connections,
                            getattr(nn, self.config.activation)(**self.config.act_defaults))
-        self.encoding = FourierFeatsEncoding(self.config.in_dim,
-                                             self.config.num_frequencies,
-                                             self.config.encoding_with_input)
         if self.config.geometric_init:
             self.geometric_init(self.config.radius_init)
 
@@ -97,7 +97,7 @@ class NeuralSDF(SDF):
         return ad.grad(dist, x_in, d_outputs, 
                        create_graph=differentiable, 
                        retain_graph=differentiable, 
-                       only_inputs=True)
+                       only_inputs=True)[0]
     
     def forward(self, 
                 x_in: Float[Tensor, "*batch in_dim"],

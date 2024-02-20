@@ -18,6 +18,13 @@ class PrintableConfig:
                 val = flattened_val + "]"
             lines += f"{key}: {str(val)}".split("\n")
         return "\n    ".join(lines)
+    
+    def to_dict(self):
+        out = {}
+        for key, val in vars(self).items():
+            if key.startswith('_'): 
+                continue
+        return out
 
 
 # Base instantiate configs

@@ -1,54 +1,51 @@
 from __future__ import annotations
 
-import iarap.data as data
-import iarap.model.nn as nn
+import torch
+import os
 
-from typing import Dict, Type
+from typing import Type
 from dataclasses import dataclass, field
-from tqdm import tqdm
 
 from iarap.config.base_config import InstantiateConfig
 from iarap.data.mesh import MeshDataConfig
+from iarap.model.nn.loss import IGRConfig
 from iarap.model.sdf import NeuralSDFConfig
+from iarap.train.trainer import Trainer
 from iarap.train.optim import AdamConfig, MultiStepSchedulerConfig
 
 
 
-class SDFTrainer:
+class SDFTrainer(Trainer):
 
     def __init__(self, config: SDFTrainerConfig):
+        super(SDFTrainer, self).__init__(config)
+
+    def train_step(self, batch):                
+        n_surf = self.config.data.surf_sample
+        x_in = torch.cat([batch['surface_sample'], batch['space_sample']], dim=1)
+        model_out = self.model(x_in, with_grad=True, differentiable_grad=True)
+
+        surf_sdf, space_sdf = torch.split(model_out['dist'], n_surf, dim=1)
+        surf_grad, space_grad = torch.split(model_out['grad'], n_surf, dim=1)
+
+        loss_dict = self.loss(surf_sdf, space_sdf, surf_grad, space_grad, batch['normal_sample'])
+        return loss_dict
+    
+    def postprocess(self):
+        ckpt_dir = self.logger.dir + '/checkpoints/'
+        print("Saving model weights in: {}".format(ckpt_dir))
+        os.makedirs(ckpt_dir, exist_ok=True)
+        torch.save(self.model.state_dict(), ckpt_dir + '/neural_sdf.pt')
         
-        self.config = config
-
-        self.setup_data()
-        self.setup_model()
-        self.setup_optimizer()
-
-    def setup_data(self):
-        self.data = self.config.data.setup()
-
-    def setup_model(self):
-        self.model = self.config.model.setup()
-
-    def setup_optimizer(self):
-        param_groups = list(self.model.parameters())
-        self.optimizer = self.config.optimizer.setup(params=param_groups)
-        self.scheduler = self.config.scheduler.setup(optimizer=self.optimizer)
-
-    def run(self):
-        print(self.config)
-        print("Starting SDF training procedure.")
-        for it in tqdm(range(self.config.num_steps)):
-            pass
-
 
 
 @dataclass
 class SDFTrainerConfig(InstantiateConfig):
 
     _target: Type = field(default_factory=lambda: SDFTrainer)
-    num_steps: int = 1
+    num_steps: int = 10000
     data: MeshDataConfig = MeshDataConfig()
     model: NeuralSDFConfig = NeuralSDFConfig()
+    loss: IGRConfig = IGRConfig()
     optimizer: AdamConfig = AdamConfig()
     scheduler: MultiStepSchedulerConfig = MultiStepSchedulerConfig()
