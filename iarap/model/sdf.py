@@ -2,6 +2,7 @@ import torch
 
 import torch.autograd as ad
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 
 from torch import Tensor
@@ -11,7 +12,7 @@ from dataclasses import dataclass, field
 
 from iarap.config.base_config import InstantiateConfig
 from iarap.model.nn import MLP, FourierFeatsEncoding
-from iarap.utils import to_immutable_dict
+from iarap.utils import to_immutable_dict, cross_skew_matrix
 
 
 
@@ -99,6 +100,58 @@ class NeuralSDF(SDF):
                        retain_graph=differentiable, 
                        only_inputs=True)[0]
     
+    def project_nearest(self, 
+                        x_in: Float[Tensor, "*batch in_dim"],
+                        dist: Optional[Float[Tensor, "*batch 1"]] = None,
+                        grad: Optional[Float[Tensor, "*batch 3"]] = None,
+                        differentiable: bool = False) -> Float[Tensor, "*batch 3"]:
+        x = x_in.requires_grad_() if grad is None else x_in
+        if dist is None:
+            dist = self.distance(x)
+        if grad is None:
+            grad = self.gradient(x, dist, differentiable)
+        return x_in - dist * F.normalize(grad, dim=-1)
+    
+    def tangent_plane(self, 
+                      x_in: Float[Tensor, "*batch in_dim"],
+                      grad: Optional[Float[Tensor, "*batch 3"]] = None,
+                      differentiable: bool = False) -> Float[Tensor, "*batch 3 3"]:
+        if grad is None:
+            x = x_in.requires_grad_() if grad is None else x_in
+            dist = self.distance(x)
+            grad = self.gradient(x, dist, differentiable)
+        d = self.config.in_dim
+        normal = F.normalize(grad, dim=-1)
+        I = torch.eye(d, device=x_in.device).view(*([1] * (x_in.dim() - 1)), d, d).expand(*x_in.shape[:-1], -1, -1)
+        z = I[..., 2]
+        v = torch.linalg.cross(normal, z, dim=-1)
+        c = (z * normal).sum(dim=-1)
+        cross_matrix = cross_skew_matrix(v)
+        return I + cross_matrix + (cross_matrix @ cross_matrix) * (1 / (1 + c)).view(-1, 1, 1)
+        # return F.normalize(I - (normal.unsqueeze(-2) * normal.unsqueeze(-1)), dim=-2)
+
+        
+    def sample_zero_level_set(self,
+                              num_samples: int,
+                              threshold: float = 0.05,
+                              samples_per_step: int = 10000,
+                              bounds: Tuple[float, float] = (-1, 1),
+                              num_projections: int = 1):
+        n_samples = 0
+        sampled_pts = []
+        device = next(self.parameters()).device
+        with torch.no_grad():
+            while n_samples < num_samples:
+                unif = torch.rand(samples_per_step, 3, device=device) * (bounds[1] - bounds[0]) + bounds[0]
+                sdf = self.distance(unif)
+                close = unif[sdf.squeeze() < threshold, :]
+                sampled_pts.append(close)
+                n_samples += close.shape[0]
+        sampled_pts = torch.cat(sampled_pts, dim=0)[:num_samples, :]
+        for it in range(num_projections):
+            sampled_pts = self.project_nearest(sampled_pts)
+        return sampled_pts
+
     def forward(self, 
                 x_in: Float[Tensor, "*batch in_dim"],
                 with_grad: bool = False,

@@ -14,7 +14,7 @@ from iarap.train.sdf_trainer import SDFTrainerConfig
 train_sdf_entrypoint = SDFTrainerConfig(
     num_steps=10000,
     data=MeshDataConfig(
-        file=Path('assets\mesh\\armadillo.ply'),
+        file=Path('assets\mesh\\dragon.ply'),
         uniform_ratio=1.0
     ),
     model=NeuralSDFConfig(),
@@ -35,7 +35,7 @@ train_sdf_entrypoint = SDFTrainerConfig(
 deform_sdf_entrypoint = DeformTrainerConfig()
 
 render_sdf_entrypoint = SDFRendererConfig(
-    load_checkpoint=Path('wandb\\run-20240220_125701-9j890ghj\\files\\checkpoints\\neural_sdf.pt'),
+    load_checkpoint=Path('assets/weights/armadillo.pt'),
 )
 
 

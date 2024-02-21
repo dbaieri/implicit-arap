@@ -42,10 +42,10 @@ class Trainer:
                 loss_dict = self.train_step(batch)
 
                 loss = sum(loss_dict.values())
-                loss_dict.update({'loss': loss})
                 loss.backward()
                 self.optimizer.step()
 
+                loss_dict.update({'loss': loss})
                 self.logger.log(loss_dict)
 
             self.scheduler.step()

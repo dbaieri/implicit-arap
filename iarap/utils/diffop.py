@@ -24,3 +24,13 @@ def hessian(y, x):
     g = gradient(y, x)
     h = jacobian(g, x)
     return h
+
+def cross_skew_matrix(v):
+    cross_matrix = torch.zeros(*v.shape, 3, device=v.device)
+    cross_matrix[..., 0, 1] = -v[..., 2]
+    cross_matrix[..., 0, 2] =  v[..., 1]
+    cross_matrix[..., 1, 0] =  v[..., 2]
+    cross_matrix[..., 1, 2] = -v[..., 0]
+    cross_matrix[..., 2, 0] = -v[..., 1]
+    cross_matrix[..., 2, 1] =  v[..., 0]
+    return cross_matrix
