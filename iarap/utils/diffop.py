@@ -33,4 +33,4 @@ def cross_skew_matrix(v):
     cross_matrix[..., 1, 2] = -v[..., 0]
     cross_matrix[..., 2, 0] = -v[..., 1]
     cross_matrix[..., 2, 1] =  v[..., 0]
-    return cross_matrix
+    return cross_matrix.transpose(-1, -2)

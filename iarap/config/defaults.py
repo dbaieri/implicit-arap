@@ -32,10 +32,26 @@ train_sdf_entrypoint = SDFTrainerConfig(
     )
 )
 
-deform_sdf_entrypoint = DeformTrainerConfig()
+deform_sdf_entrypoint = DeformTrainerConfig(    
+    num_steps=2000,
+    pretrained_init=True,
+    pretrained_shape=Path('./assets/weights/armadillo.pt'),
+    delaunay_sample=30,
+    zero_samples=200,
+    attempts_per_step=10000,
+    near_surface_threshold=0.01,
+    domain_bounds=(-1, 1),
+    num_projections=5,
+    plane_coords_scale=0.001,
+    device='cuda',
+    model=NeuralSDFConfig(),
+    loss=None,
+    optimizer=AdamConfig(),
+    scheduler=MultiStepSchedulerConfig()
+)
 
 render_sdf_entrypoint = SDFRendererConfig(
-    load_checkpoint=Path('assets/weights/armadillo.pt'),
+    load_checkpoint=Path('assets/weights/dragon.pt'),
 )
 
 

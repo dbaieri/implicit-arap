@@ -112,6 +112,12 @@ class NeuralSDF(SDF):
             grad = self.gradient(x, dist, differentiable)
         return x_in - dist * F.normalize(grad, dim=-1)
     
+    def sphere_trace(self, 
+                     x_in: Float[Tensor, "*batch 3"],
+                     dir: Float[Tensor, "*batch 3"]) -> Float[Tensor, "*batch 3"]:
+        dist = self.distance(x_in)
+        return x_in - dist * dir
+    
     def tangent_plane(self, 
                       x_in: Float[Tensor, "*batch in_dim"],
                       grad: Optional[Float[Tensor, "*batch 3"]] = None,
@@ -127,7 +133,8 @@ class NeuralSDF(SDF):
         v = torch.linalg.cross(normal, z, dim=-1)
         c = (z * normal).sum(dim=-1)
         cross_matrix = cross_skew_matrix(v)
-        return I + cross_matrix + (cross_matrix @ cross_matrix) * (1 / (1 + c)).view(-1, 1, 1)
+        scale = ((1 - c) / v.norm(dim=-1).pow(2)).view(-1, 1, 1)
+        return I + cross_matrix + (cross_matrix @ cross_matrix) * scale
         # return F.normalize(I - (normal.unsqueeze(-2) * normal.unsqueeze(-1)), dim=-2)
 
         
