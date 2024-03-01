@@ -1,18 +1,12 @@
-from operator import inv
-import sys
+
 import torch
-import numpy as np
 import kaolin as kal
 import torch.nn.functional as F
 
-from collections import defaultdict
 from tqdm import tqdm
-from typing import Tuple
 from kaolin.rep import SurfaceMesh
-from torch.nn.functional import normalize
-from torch.nn.utils.rnn import pad_sequence
 
-from iarap.utils import cholesky_invert, least_sq_with_known_values
+from iarap.utils import cholesky_invert, least_sq_with_known_values, qr_invert
 
 
 class ARAPMesh(SurfaceMesh):
@@ -94,6 +88,7 @@ class ARAPMesh(SurfaceMesh):
         w = (w + w.t()).to_dense()
         L = torch.diag(torch.sum(w, dim=0)) - w
 
+        '''
         def get_areas(A, B, C):
             left_vec = A - B
             right_vec = C - B
@@ -113,8 +108,9 @@ class ARAPMesh(SurfaceMesh):
         inv_areas[inv_areas.isinf()] = 0.0
         area_idx = L.nonzero().T  
         inv_areas = torch.sparse_coo_tensor(area_idx, inv_areas[area_idx[0, :]] * inv_areas[area_idx[1, :]], (V, V))
+        '''
 
-        return L, w  #  * inv_areas.to_dense(), w
+        return L, w  #  * inv_areas.to_dense() , w
     
     def get_cot_weights_p3d(self, eps=1e-12) -> torch.Tensor:
         """Retrieves cotangent weights 0.5 * cot a_ij + cot b_ij for each mesh. Returns as a padded tensor.
@@ -155,13 +151,13 @@ class ARAPMesh(SurfaceMesh):
         L = torch.diag(torch.sum(w, dim=0)) - w
 
         # For each vertex, compute the sum of areas for triangles containing it.
-        idx = faces.view(-1)
-        inv_areas = torch.zeros(V, dtype=torch.float32, device=verts.device)
-        val = torch.stack([area] * 3, dim=1).view(-1)
-        inv_areas.scatter_add_(0, idx, val)
-        idx = inv_areas > 0
-        inv_areas[idx] = 1.0 / inv_areas[idx]
-        inv_areas = inv_areas.view(-1, 1)
+        # idx = faces.view(-1)
+        # inv_areas = torch.zeros(V, dtype=torch.float32, device=verts.device)
+        # val = torch.stack([area] * 3, dim=1).view(-1)
+        # inv_areas.scatter_add_(0, idx, val)
+        # idx = inv_areas > 0
+        # inv_areas[idx] = 1.0 / inv_areas[idx]
+        # inv_areas = inv_areas.view(-1, 1)
 
         return L, w
 
@@ -177,8 +173,8 @@ class ARAPMesh(SurfaceMesh):
 
     def precompute_laplacian(self):
         """Precompute edge weights and Laplacian-Beltrami operator"""
-        L, w = self.get_cot_weights_pyg()
-        # L, w = self.get_cot_weights_p3d()
+        # L, w = self.get_cot_weights_pyg()
+        L, w = self.get_cot_weights_p3d()
 
         self.precomputed_params["L"] = L
         self.precomputed_params["w"] = w
@@ -191,7 +187,7 @@ class ARAPMesh(SurfaceMesh):
         unknown_mask[static_verts] = 0
         unknown_mask[handle_verts] = 0
         L_reduced = L[unknown_mask, :][:, unknown_mask]  # sample sub laplacian matrix for unknowns only
-        L_reduced_inv = cholesky_invert(L_reduced)  #  + torch.eye(L_reduced.shape[0],device=L_reduced.device)
+        L_reduced_inv = qr_invert(L_reduced)  
         self.precomputed_params["L_reduced_inv"] = L_reduced_inv
 
     def compute_energy(self, 
@@ -313,8 +309,6 @@ class ARAPMesh(SurfaceMesh):
             self.precompute_reduced_laplacian(static_verts, handle_verts)
         L_reduced_inv = self.precomputed_params["L_reduced_inv"].to(self.device)
 
-          # largest number of neighbours
-
         ii, jj, nn = self.get_flat_edge_index()  # flattened tensors for indices
         
         if "w_nfmt" not in self.precomputed_params:
@@ -367,15 +361,15 @@ class ARAPMesh(SurfaceMesh):
             p_prime_unknown = torch.mm(L_reduced_inv, b[unknown_verts])  # predicted p's for only unknown values
 
             p_prime = torch.zeros_like(p_prime)  # generate next iteration of fit, from p0_unknown and constraints
-            p_prime[known_mask, :] = known_val
+            p_prime[known_mask, :] = known_val[known_mask, :]
 
             # Assign initially unknown values to x_out
             p_prime[unknown_verts] = p_prime_unknown
 
             # track energy
             if track_energy:
-                energy = self.compute_energy([p], [p_prime], device=self.device)
-                print(f"It = {it}, Energy = {energy:.2f}")
+                energy = self.compute_energy(p_prime, ii, jj, nn)
+                print(f"It = {it}, Energy = {energy:.5f}")
             # update tqdm
             if report:
                 progress.update()

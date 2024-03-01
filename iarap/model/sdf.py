@@ -112,6 +112,15 @@ class NeuralSDF(SDF):
             grad = self.gradient(x, dist, differentiable)
         return x_in - dist * F.normalize(grad, dim=-1)
     
+    def project_level_sets(self, 
+                           x_in: Float[Tensor, "*batch sample 3"],
+                           origin_dist: Optional[Float[Tensor, "*batch 1"]]
+                           ) -> Float[Tensor, "*batch 3"]:
+        x = x_in.requires_grad_()
+        dist = self.distance(x)
+        grad = self.gradient(x, dist)
+        return x_in - (dist - origin_dist.unsqueeze(1)) * F.normalize(grad, dim=-1)
+    
     def sphere_trace(self, 
                      x_in: Float[Tensor, "*batch 3"],
                      dir: Float[Tensor, "*batch 3"]) -> Float[Tensor, "*batch 3"]:

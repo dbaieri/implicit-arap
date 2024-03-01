@@ -1,12 +1,13 @@
 
 import torch
 
+import kaolin as kal
 import torch.nn as nn
 import torch.nn.functional as F
 
 from torch import Tensor
-from jaxtyping import Float
-from typing import Type
+from jaxtyping import Float, Int, Bool
+from typing import Dict, Type
 from dataclasses import dataclass, field
 
 from iarap.config.base_config import InstantiateConfig
@@ -37,7 +38,8 @@ class ImplicitGeometricRegularization(nn.Module):
                 pred_sdf_space: Float[Tensor, "*batch 1"],
                 grad_sdf_surf: Float[Tensor, "*batch 3"],
                 grad_sdf_space: Float[Tensor, "*batch 3"],
-                surf_normals: Float[Tensor, "*batch 3"]):
+                surf_normals: Float[Tensor, "*batch 3"]
+                ) -> Dict[str, Float[Tensor, "1"]]:
         zero_loss = self.config.zero_sdf_surface_w * self.zero_loss(pred_sdf_surf)
         zero_penalty = self.config.zero_penalty_w * self.zero_penalty(pred_sdf_space)
         eik_loss = self.config.eikonal_error_w * self.eikonal_loss(torch.cat([grad_sdf_space, grad_sdf_surf], dim=1))
@@ -46,6 +48,7 @@ class ImplicitGeometricRegularization(nn.Module):
                 'eikonal_loss': eik_loss, 
                 'zero_penalty': zero_penalty,
                 'normals_loss': normals_loss}
+
 
 class EikonalLoss(nn.Module):
 
@@ -85,3 +88,90 @@ class ZeroPenalty(nn.Module):
     def forward(self, dist: Float[Tensor, "*batch 1"]) -> Float[Tensor, "1"]:
         error = torch.exp(-self.scale * dist.abs())
         return error.mean()
+    
+
+
+
+@dataclass
+class DeformationLossConfig(InstantiateConfig):
+
+    _target: Type = field(default_factory=lambda: DeformationLoss)
+    arap_loss_w: float = 1.0
+    handle_loss_w: float = 1.0
+
+
+class DeformationLoss(nn.Module):
+
+    def __init__(self, config: DeformationLossConfig):
+        super(DeformationLoss, self).__init__()
+        self.config = config
+        self.arap_loss = PatchARAPLoss()
+        self.handle_loss = nn.MSELoss()
+
+    def forward(self,
+                patch_verts: Float[Tensor, "p n 3"],
+                faces: Int[Tensor, "m 3"],
+                rotations: Float[Tensor, "p n 3 3"],
+                handle_idx: Int[Tensor, "h 2"],
+                handle_value: Float[Tensor, "h 3"]
+                ) -> Float[Tensor, "1"]:
+        patch_arap_loss = self.arap_loss(patch_verts, faces, rotations)
+        rotated_verts = (rotations @ patch_verts[..., None]).squeeze(-1)
+        handle_pos = rotated_verts[handle_idx[:, 0], handle_idx[:, 1], :]
+        handle_loss = self.handle_loss(handle_pos, handle_value)
+        return {'arap_loss': patch_arap_loss * self.config.arap_loss_w,
+                'handle_loss': handle_loss * self.config.handle_loss_w}
+
+
+class PatchARAPLoss(nn.Module):
+
+    def __init__(self):
+        super(PatchARAPLoss, self).__init__()
+
+    def get_cot_weights(self,
+                        patch_verts: Float[Tensor, "p n 3"],
+                        faces: Int[Tensor, "m 3"]
+                        ) -> Float[Tensor, "p n n"]:
+        V = patch_verts.shape[1]
+
+        face_verts = patch_verts[:, faces, :]
+        v0, v1, v2 = face_verts[..., 0, :], face_verts[..., 1, :], face_verts[..., 2, :]
+  
+        idx = torch.cat([faces[:, :2], faces[:, 1:], faces[:, ::2]], dim=0).T
+
+        A = (v1 - v2).norm(dim=-1)
+        B = (v0 - v2).norm(dim=-1)
+        C = (v0 - v1).norm(dim=-1)
+
+        s = 0.5 * (A + B + C)
+        area = (s * (s - A) * (s - B) * (s - C)).clamp_(min=1e-12).sqrt()
+
+        A2, B2, C2 = A * A, B * B, C * C
+        cota = (B2 + C2 - A2) / area
+        cotb = (A2 + C2 - B2) / area
+        cotc = (A2 + B2 - C2) / area
+        cot = torch.cat([cota, cotb, cotc], dim=1)
+        cot /= 4.0
+
+        w = torch.zeros((patch_verts.shape[0], V, V), device=patch_verts.device)
+        w[:, idx[0, :], idx[1, :]] = cot
+
+        w = w + w.transpose(-1, -2)
+        return w
+
+    def forward(self, 
+                patch_verts: Float[Tensor, "p n 3"],
+                faces: Int[Tensor, "m 3"],
+                rotations: Float[Tensor, "p n 3 3"]
+                ) -> Float[Tensor, "1"]:
+        w = self.get_cot_weights(patch_verts, faces)
+        idx = torch.cat([faces[:, :2], faces[:, 1:], faces[:, ::2]], dim=0).T
+        w_per_edge = w[:, idx[0, :], idx[1, :]]
+
+        rotated_verts = (rotations @ patch_verts[..., None]).squeeze(-1)
+        rot_verts_edges = rotated_verts[:, idx[0, :], :] - rotated_verts[:, idx[1, :], :]
+
+        edges_source = patch_verts[:, idx[0, :], :] - patch_verts[:, idx[1, :], :]
+        rot_edges = (rotations[:, idx[0, :], ...] @ edges_source[..., None]).squeeze(-1)
+
+        return (w_per_edge * (rot_edges - rot_verts_edges).pow(2).sum(dim=-1)).sum(dim=-1).mean(dim=0)

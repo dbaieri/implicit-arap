@@ -46,3 +46,7 @@ def cholesky_invert(A):
 	L_inv = torch.inverse(L)
 	A_inv = torch.mm(L_inv.T, L_inv)
 	return A_inv
+
+def qr_invert(A):
+	Q, R = torch.linalg.qr(A)
+	return torch.inverse(R) @ Q.mT
