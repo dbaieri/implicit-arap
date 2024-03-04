@@ -26,7 +26,7 @@ from iarap.train.trainer import Trainer
 from iarap.utils import delaunay, detach_model
 
 
-DEBUG = True
+DEBUG = False
 
 
 
@@ -44,10 +44,10 @@ class DeformTrainer(Trainer):
         self.loader = [0]  
         # Configure handles
         handle_cfg = yaml.load(open(self.config.handles_spec, 'r'), yaml.Loader)
-        handle_dir = self.config.handles_spec.parent / 'handles'
-        static = [np.loadtxt(handle_dir / f"{f}.txt") for f in handle_cfg['handles']['static']['positions']]
-        moving = [np.loadtxt(handle_dir / f"{f}.txt") for f in handle_cfg['handles']['moving']['positions']]
-        transforms = [np.loadtxt(handle_dir / f"{f}.txt") for f in  handle_cfg['handles']['moving']['transform']]
+        handle_dir = self.config.handles_spec.parent
+        static = [np.loadtxt(handle_dir / "parts" / f"{f}.txt") for f in handle_cfg['handles']['static']['positions']]
+        moving = [np.loadtxt(handle_dir / "parts" / f"{f}.txt") for f in handle_cfg['handles']['moving']['positions']]
+        transforms = [np.loadtxt(handle_dir / "transforms" / f"{f}.txt") for f in  handle_cfg['handles']['moving']['transform']]
         self.handles_static = torch.from_numpy(np.concatenate(static, axis=0)).to(self.config.device, torch.float)
         moving_pos = torch.from_numpy(np.concatenate(moving, axis=0)).to(self.config.device, torch.float)
         moving_trans = torch.from_numpy(np.concatenate(transforms, axis=0)).to(self.config.device, torch.float)
@@ -67,9 +67,11 @@ class DeformTrainer(Trainer):
     def train_step(self, batch):
 
         handles = torch.cat([self.handles_moving[:, :3], self.handles_static], dim=0)
-        handle_values = torch.cat([self.handles_moving[:, 3:], self.handles_static], dim=0)
         for it in range(self.config.num_projections):
-            handles = self.source.project_nearest(handles)
+            handles = self.source.project_nearest(handles).detach()
+        handle_values = torch.cat(
+            [self.handles_moving[:, 3:], handles[self.handles_moving.shape[0]:, :]], dim=0
+        ).detach()
 
         surf_sample = self.source.sample_zero_level_set(self.config.zero_samples - handles.shape[0],
                                                         self.config.near_surface_threshold,
@@ -108,10 +110,13 @@ class DeformTrainer(Trainer):
             surface_verts_flat = level_set_verts.view(-1, 3)
             triangles_flat = triangles_all.view(-1, 3)
             
-            w = self.loss.arap_loss.get_cot_weights(level_set_verts, triangles).sum(dim=-1).view(-1)
-            cmap = vedo.color_map(w.cpu().detach()) * 255.
+            # w = self.loss.arap_loss.get_cot_weights(level_set_verts, triangles).sum(dim=-1).view(-1)
+            # cmap = vedo.color_map(w.cpu().detach()) * 255.
+            # cmap = torch.zeros_like(surface_verts_flat)
+            
+
             vis_mesh = vedo.Mesh([surface_verts_flat.cpu().detach(), triangles_flat.cpu().long()]).wireframe()
-            vis_mesh.pointcolors = cmap
+            # vis_mesh.pointcolors = cmap
             # tangents = vedo.Mesh([tangent_pts.cpu().detach().view(-1, 3), triangles_flat.cpu().long()], c='black').wireframe()
             normals = vedo.Arrows(samples.detach().cpu().view(-1, 3), (samples + patch_normals * 0.02).cpu().detach().view(-1, 3))
             vedo.show(vis_mesh, normals).close()  
@@ -154,7 +159,12 @@ class DeformTrainer(Trainer):
             torch.arange(0, handles.shape[0], device=self.device, dtype=torch.long),
             torch.zeros(handles.shape[0], device=self.device, dtype=torch.long)
         ], dim=-1)
-        loss_dict = self.loss(level_set_verts.detach(), triangles, rotations, handle_idx, handle_values)
+        moving_idx = handle_idx[:self.handles_moving.shape[0], :]
+        static_idx = handle_idx[self.handles_moving.shape[0]:, :]
+        loss_dict = self.loss(level_set_verts.detach(), 
+                              triangles, rotations, 
+                              moving_idx, static_idx, 
+                              handle_values, self.step % 2)
         return loss_dict
     
     def postprocess(self):

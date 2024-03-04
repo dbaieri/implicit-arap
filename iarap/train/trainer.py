@@ -35,7 +35,7 @@ class Trainer:
         print(self.config)
         print("Running {} procedure".format(self.__class__.__name__))
         self.logger = wandb.init(project='iARAP', config=self.config.to_dict())
-        for it in tqdm(range(self.config.num_steps)):
+        for self.step in tqdm(range(self.config.num_steps)):
             for batch in self.loader:
                 self.optimizer.zero_grad()
 

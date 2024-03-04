@@ -44,7 +44,7 @@ class SDFRenderer:
             sample = sample.contiguous()
             if self.deformation_model is not None:
                 rotations = self.deformation_model(sample)['rot']
-                sample = (rotations @ sample[..., None]).squeeze(-1)
+                sample = (rotations.transpose(-1, -2) @ sample[..., None]).squeeze(-1)
             model_out = self.shape_model(sample)
             f_eval.append(model_out['dist'].cpu())
 

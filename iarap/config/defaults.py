@@ -37,7 +37,7 @@ train_sdf_entrypoint = SDFTrainerConfig(
 deform_sdf_entrypoint = DeformTrainerConfig(    
     num_steps=2000,
     pretrained_shape=Path('./assets/weights/armadillo.pt'),
-    handles_spec=Path('assets/contraints/armadillo/test_1.yaml'),
+    handles_spec=Path('assets/constraints/armadillo/test_1.yaml'),
     delaunay_sample=30,
     zero_samples=1000,
     space_samples=1000,
@@ -49,14 +49,21 @@ deform_sdf_entrypoint = DeformTrainerConfig(
     device='cuda',
     shape_model=NeuralSDFConfig(),
     rotation_model=NeuralRFConfig(),
-    loss=DeformationLossConfig(handle_loss_w=1000, arap_loss_w=500),
-    optimizer=AdamConfig(),
+    loss=DeformationLossConfig(
+        moving_handle_loss_w=1000, 
+        static_handle_loss_w=1000, 
+        arap_loss_w=10
+    ),
+    optimizer=AdamConfig(
+        lr=1e-3
+    ),
     scheduler=MultiStepSchedulerConfig()
 )
 
 render_sdf_entrypoint = SDFRendererConfig(
     load_shape=Path('assets/weights/armadillo.pt'),
-    load_deformation=Path('wandb/run-20240301_162955-o0igrprq/files/checkpoints/neural_rotation.pt'),
+    load_deformation=Path('wandb/run-20240304_160841-bh9r4jzt/files/checkpoints/neural_rotation.pt'),
+    chunk=300000
 )
 
 

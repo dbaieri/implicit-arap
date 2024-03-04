@@ -5,6 +5,6 @@ handles:
       - right_foot
   moving:
     positions:
-      - snout
+      - right_hand
     transform:
-      - snout_down
+      - right_hand_front

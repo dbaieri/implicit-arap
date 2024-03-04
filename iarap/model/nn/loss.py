@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from torch import Tensor
 from jaxtyping import Float, Int, Bool
-from typing import Dict, Type
+from typing import Dict, Literal, Type
 from dataclasses import dataclass, field
 
 from iarap.config.base_config import InstantiateConfig
@@ -97,7 +97,8 @@ class DeformationLossConfig(InstantiateConfig):
 
     _target: Type = field(default_factory=lambda: DeformationLoss)
     arap_loss_w: float = 1.0
-    handle_loss_w: float = 1.0
+    moving_handle_loss_w: float = 1.0
+    static_handle_loss_w: float = 1.0
 
 
 class DeformationLoss(nn.Module):
@@ -112,15 +113,22 @@ class DeformationLoss(nn.Module):
                 patch_verts: Float[Tensor, "p n 3"],
                 faces: Int[Tensor, "m 3"],
                 rotations: Float[Tensor, "p n 3 3"],
-                handle_idx: Int[Tensor, "h 2"],
-                handle_value: Float[Tensor, "h 3"]
+                moving_idx: Int[Tensor, "h_1 2"],
+                static_idx: Int[Tensor, "h_2 2"],
+                handle_value: Float[Tensor, "h 3"],
+                alternation: Literal[0, 1]
                 ) -> Float[Tensor, "1"]:
-        patch_arap_loss = self.arap_loss(patch_verts, faces, rotations)
+        patch_arap_loss = self.arap_loss(patch_verts, faces, rotations, alternation)
         rotated_verts = (rotations @ patch_verts[..., None]).squeeze(-1)
-        handle_pos = rotated_verts[handle_idx[:, 0], handle_idx[:, 1], :]
-        handle_loss = self.handle_loss(handle_pos, handle_value)
-        return {'arap_loss': patch_arap_loss * self.config.arap_loss_w,
-                'handle_loss': handle_loss * self.config.handle_loss_w}
+        moving_pos = rotated_verts[moving_idx[:, 0], moving_idx[:, 1], :]
+        static_pos = rotated_verts[static_idx[:, 0], static_idx[:, 1], :]
+        moving_handle_loss = self.handle_loss(moving_pos, handle_value[moving_idx[:, 0], :])
+        static_handle_loss = self.handle_loss(static_pos, handle_value[static_idx[:, 0], :])
+        return {
+            'arap_loss': patch_arap_loss * self.config.arap_loss_w,
+            'moving_handle_loss': moving_handle_loss * self.config.moving_handle_loss_w,
+            'static_handle_loss': static_handle_loss * self.config.static_handle_loss_w
+        }
 
 
 class PatchARAPLoss(nn.Module):
@@ -162,7 +170,8 @@ class PatchARAPLoss(nn.Module):
     def forward(self, 
                 patch_verts: Float[Tensor, "p n 3"],
                 faces: Int[Tensor, "m 3"],
-                rotations: Float[Tensor, "p n 3 3"]
+                rotations: Float[Tensor, "p n 3 3"],
+                alternation: Literal[0, 1]
                 ) -> Float[Tensor, "1"]:
         w = self.get_cot_weights(patch_verts, faces)
         idx = torch.cat([faces[:, :2], faces[:, 1:], faces[:, ::2]], dim=0).T
@@ -173,5 +182,10 @@ class PatchARAPLoss(nn.Module):
 
         edges_source = patch_verts[:, idx[0, :], :] - patch_verts[:, idx[1, :], :]
         rot_edges = (rotations[:, idx[0, :], ...] @ edges_source[..., None]).squeeze(-1)
+
+        if alternation == 0:
+            rot_edges = rot_edges.detach()
+        elif alternation == 1:
+            rot_verts_edges = rot_verts_edges.detach()
 
         return (w_per_edge * (rot_edges - rot_verts_edges).pow(2).sum(dim=-1)).sum(dim=-1).mean(dim=0)
