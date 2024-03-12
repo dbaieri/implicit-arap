@@ -120,7 +120,6 @@ class SDFRenderer:
 
     def run(self):
 
-        ps.set_enable_vsync(False)
         ps.set_ground_plane_mode("none")
         ps.set_window_size(*self.config.window_size)
         ps.set_window_resizable(True)
@@ -128,28 +127,22 @@ class SDFRenderer:
         picks = []
         output_file = "path/to/point/selection/file.txt"
         viewed_level_set = 0.0
+        last_level_set = viewed_level_set
         verts, faces = self.extract_mesh(level=0)
 
         def custom_callback():
             io = psim.GetIO()
-            nonlocal picks, output_file, verts, faces, viewed_level_set
+            nonlocal picks, output_file, verts, faces, viewed_level_set, last_level_set
 
-            _, output_file = psim.InputText("Output file", output_file)
-            ch_ls, viewed_level_set = psim.SliderFloat("Level set", viewed_level_set, v_min=-1.0, v_max=1.0)
+            _, viewed_level_set = psim.SliderFloat("Level set", viewed_level_set, v_min=-1.0, v_max=1.0)
 
-            if io.MouseClicked[0] and io.KeyCtrl:
-                screen_coords = io.MousePos
-                world_pos = ps.screen_coords_to_world_position(screen_coords)
-                # print(world_pos)
-                if np.abs(world_pos).max() <= 1.0 and not np.isinf(world_pos).any():
-                    world_pos = self.project_nearest(world_pos, n_its=10, level=viewed_level_set
-                                                     ).squeeze().cpu().numpy()
-                    picks.append(world_pos)
-                    ps.register_point_cloud("PickedPoints", np.stack(picks, axis=0), enabled=True)
-                    # self.set_picked(np.expand_dims(world_pos, axis=0))
+            if psim.Button("Zero"):
+                viewed_level_set = 0.0
 
-            if psim.Button("Render") and ch_ls:
-                # This code is executed when the button is pressed
+            psim.SameLine()
+
+            if psim.Button("Render") and viewed_level_set != last_level_set:
+                last_level_set = viewed_level_set
                 verts, faces = self.extract_mesh(level=viewed_level_set)
                 ps.register_surface_mesh("NeuralSDF", verts, faces, enabled=True)
                 # ps.render_implicit_surface_scalar("NeuralSDF", 
@@ -163,6 +156,20 @@ class SDFRenderer:
                     picks = []
                     ps.remove_point_cloud("PickedPoints")
 
+            psim.Separator()
+            _, output_file = psim.InputText("Output file", output_file)
+
+            if io.MouseClicked[0] and io.KeyCtrl:
+                screen_coords = io.MousePos
+                world_pos = ps.screen_coords_to_world_position(screen_coords)
+                # print(world_pos)
+                if np.abs(world_pos).max() <= 1.0 and not np.isinf(world_pos).any():
+                    world_pos = self.project_nearest(world_pos, n_its=10, level=viewed_level_set
+                                                     ).squeeze().cpu().numpy()
+                    picks.append(world_pos)
+                    ps.register_point_cloud("PickedPoints", np.stack(picks, axis=0), enabled=True)
+                    # self.set_picked(np.expand_dims(world_pos, axis=0))
+
             if psim.Button("Save points"):
                 if len(picks) > 0:
                     print(f"Saving selected points at {output_file}")
@@ -173,14 +180,17 @@ class SDFRenderer:
                 else:
                     print("No points to save.")
 
+            psim.SameLine()
+
             if psim.Button("Clear points"):
                 if len(picks) > 0:
                     picks = []
                     ps.remove_point_cloud("PickedPoints")
                     # self.shape_color[...] = 0.0
 
-            psim.TextUnformatted("Current picks:\n" + \
-                                 (str(np.stack(picks, axis=0)) if len(picks) > 0 else str([])))
+            # psim.Separator()
+            # psim.TextUnformatted("Current picks:\n" + \
+            #                      (str(np.stack(picks, axis=0)) if len(picks) > 0 else str([])))
 
         ps.init()
         # ps.render_implicit_surface_scalar("NeuralSDF", 
@@ -211,7 +221,7 @@ class SDFRendererConfig(InstantiateConfig):
     max_coord: float =  1.0
     resolution: int = 512
     chunk: int = 65536
-    window_size: Tuple[int, int] = (1440, 1080)
+    window_size: Tuple[int, int] = (1600, 1200)
     device: Literal['cpu', 'cuda'] = 'cuda'
     shape_model: NeuralSDFConfig = NeuralSDFConfig()
     deformation_model: NeuralRFConfig = NeuralRFConfig()
