@@ -8,7 +8,7 @@ import polyscope as ps
 import polyscope.imgui as psim
 import torch.nn.functional as F
 
-from typing import Type, Literal
+from typing import Tuple, Type, Literal
 from dataclasses import dataclass, field
 from pathlib import Path
 from tqdm import tqdm
@@ -79,10 +79,10 @@ class SDFRenderer:
         model_out = self.shape_model(sample)
         return model_out['dist']
     
-    def project_nearest(self, query, n_its=5):
+    def project_nearest(self, query, n_its=5, level=0.0):
         query = torch.from_numpy(query).float().to(self.config.device).view(-1, 3).requires_grad_()
         for i in range(n_its):
-            dist = self.sdf_functional(query)
+            dist = self.sdf_functional(query) - level
             grad = F.normalize(gradient(dist, query), dim=-1)
             query = (query - dist * grad).detach().requires_grad_()
         return query.detach()
@@ -122,9 +122,11 @@ class SDFRenderer:
 
         ps.set_enable_vsync(False)
         ps.set_ground_plane_mode("none")
+        ps.set_window_size(*self.config.window_size)
+        ps.set_window_resizable(True)
 
         picks = []
-        output_file = "Enter output path for picked points"
+        output_file = "path/to/point/selection/file.txt"
         viewed_level_set = 0.0
         verts, faces = self.extract_mesh(level=0)
 
@@ -133,19 +135,20 @@ class SDFRenderer:
             nonlocal picks, output_file, verts, faces, viewed_level_set
 
             _, output_file = psim.InputText("Output file", output_file)
-            _, viewed_level_set = psim.SliderFloat("Level set", viewed_level_set, v_min=-1.0, v_max=1.0)
+            ch_ls, viewed_level_set = psim.SliderFloat("Level set", viewed_level_set, v_min=-1.0, v_max=1.0)
 
             if io.MouseClicked[0] and io.KeyCtrl:
                 screen_coords = io.MousePos
                 world_pos = ps.screen_coords_to_world_position(screen_coords)
-                print(world_pos)
+                # print(world_pos)
                 if np.abs(world_pos).max() <= 1.0 and not np.isinf(world_pos).any():
-                    world_pos = self.project_nearest(world_pos, n_its=10).squeeze().cpu().numpy()
+                    world_pos = self.project_nearest(world_pos, n_its=10, level=viewed_level_set
+                                                     ).squeeze().cpu().numpy()
                     picks.append(world_pos)
                     ps.register_point_cloud("PickedPoints", np.stack(picks, axis=0), enabled=True)
                     # self.set_picked(np.expand_dims(world_pos, axis=0))
 
-            if psim.Button("Render"):
+            if psim.Button("Render") and ch_ls:
                 # This code is executed when the button is pressed
                 verts, faces = self.extract_mesh(level=viewed_level_set)
                 ps.register_surface_mesh("NeuralSDF", verts, faces, enabled=True)
@@ -155,12 +158,18 @@ class SDFRenderer:
                 #                                   mode='sphere_march',
                 #                                   hit_dist=1e-7,
                 #                                   enabled=True)
-                print("Rendering finished")
+                # print("Rendering finished")
+                if len(picks) > 0:
+                    picks = []
+                    ps.remove_point_cloud("PickedPoints")
 
             if psim.Button("Save points"):
                 if len(picks) > 0:
                     print(f"Saving selected points at {output_file}")
-                    np.savetxt(output_file, np.stack(picks, axis=0))
+                    try:
+                        np.savetxt(output_file, np.stack(picks, axis=0))
+                    except:
+                        print("Invalid output file location.")
                 else:
                     print("No points to save.")
 
@@ -202,6 +211,7 @@ class SDFRendererConfig(InstantiateConfig):
     max_coord: float =  1.0
     resolution: int = 512
     chunk: int = 65536
+    window_size: Tuple[int, int] = (1440, 1080)
     device: Literal['cpu', 'cuda'] = 'cuda'
     shape_model: NeuralSDFConfig = NeuralSDFConfig()
     deformation_model: NeuralRFConfig = NeuralRFConfig()
