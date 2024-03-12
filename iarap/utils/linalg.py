@@ -1,5 +1,8 @@
 import torch
 
+from torch import Tensor
+from jaxtyping import Float
+
 
 def least_sq_with_known_values(A, b, known_mask=None, known_val=None):
 	"""Solves the least squares problem minx ||Ax - b||2, where some values of x are known.
@@ -50,3 +53,30 @@ def cholesky_invert(A):
 def qr_invert(A):
 	Q, R = torch.linalg.qr(A)
 	return torch.inverse(R) @ Q.mT
+
+
+def euler_to_rotation(euler: Float[Tensor, "*batch 3"]) -> Float[Tensor, "*batch 3 3"]:
+	coords = [f/2.0 for f in torch.split(euler, 1, dim=-1)]
+	cx, cy, cz = [torch.cos(f) for f in coords]
+	sx, sy, sz = [torch.sin(f) for f in coords]
+
+	quaternion = torch.cat([
+		cx*cy*cz - sx*sy*sz, cx*sy*sz + cy*cz*sx,
+		cx*cz*sy - sx*cy*sz, cx*cy*sz + sx*cz*sy
+	], dim=-1)
+
+	norm_quat = quaternion / quaternion.norm(p=2, dim=-1, keepdim=True)
+	w, x, y, z = torch.split(norm_quat, 1, dim=-1)
+
+	B = quaternion.shape[:-1]
+
+	w2, x2, y2, z2 = w.pow(2), x.pow(2), y.pow(2), z.pow(2)
+	wx, wy, wz = w * x, w * y, w * z
+	xy, xz, yz = x * y, x * z, y * z
+
+	rot_mat = torch.stack([
+		w2 + x2 - y2 - z2, 2 * xy - 2 * wz, 2 * wy + 2 * xz,
+		2 * wz + 2 * xy, w2 - x2 + y2 - z2, 2 * yz - 2 * wx,
+		2 * xz - 2 * wy, 2 * wx + 2 * yz, w2 - x2 - y2 + z2
+	], dim=-1).view(*B, 3, 3)
+	return rot_mat

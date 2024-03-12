@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from iarap.config.base_config import InstantiateConfig
 from iarap.model.nn import MLP, FourierFeatsEncoding
-from iarap.utils import to_immutable_dict, cross_skew_matrix
+from iarap.utils import to_immutable_dict, euler_to_rotation
 
     
 
@@ -71,34 +71,6 @@ class NeuralRF(nn.Module):
 
     def euler(self, x_in: Float[Tensor, "*batch in_dim"]) -> Float[Tensor, "*batch 3"]:
         return self.network(self.encoding(x_in))
-    
-    def euler_to_rotation(self, 
-                          euler: Float[Tensor, "*batch 3"]
-                          ) -> Float[Tensor, "*batch 3 3"]:
-        coords = [f/2.0 for f in torch.split(euler, 1, dim=-1)]
-        cx, cy, cz = [torch.cos(f) for f in coords]
-        sx, sy, sz = [torch.sin(f) for f in coords]
-
-        quaternion = torch.cat([
-            cx*cy*cz - sx*sy*sz, cx*sy*sz + cy*cz*sx,
-            cx*cz*sy - sx*cy*sz, cx*cy*sz + sx*cz*sy
-        ], dim=-1)
-
-        norm_quat = quaternion / quaternion.norm(p=2, dim=-1, keepdim=True)
-        w, x, y, z = torch.split(norm_quat, 1, dim=-1)
-
-        B = quaternion.shape[:-1]
-
-        w2, x2, y2, z2 = w.pow(2), x.pow(2), y.pow(2), z.pow(2)
-        wx, wy, wz = w * x, w * y, w * z
-        xy, xz, yz = x * y, x * z, y * z
-
-        rot_mat = torch.stack([
-            w2 + x2 - y2 - z2, 2 * xy - 2 * wz, 2 * wy + 2 * xz,
-            2 * wz + 2 * xy, w2 - x2 + y2 - z2, 2 * yz - 2 * wx,
-            2 * xz - 2 * wy, 2 * wx + 2 * yz, w2 - x2 - y2 + z2
-        ], dim=-1).view(*B, 3, 3)
-        return rot_mat
 
     def forward(self, 
                 x_in: Float[Tensor, "*batch in_dim"],
@@ -106,7 +78,7 @@ class NeuralRF(nn.Module):
                 ) -> Dict[str, Float[Tensor, "*batch f"]]:
         outputs = {}
         euler = self.euler(x_in)
-        outputs['rot'] = self.euler_to_rotation(euler)
+        outputs['rot'] = euler_to_rotation(euler)
         if return_euler:
             outputs['euler'] = euler
         return outputs
