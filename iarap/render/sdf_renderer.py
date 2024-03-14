@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 import vedo
 import mcubes
+import pathlib
 import numpy as np
 import polyscope as ps
 import polyscope.imgui as psim
@@ -16,7 +17,7 @@ from tqdm import tqdm
 from iarap.config.base_config import InstantiateConfig
 from iarap.model.rot_net import NeuralRFConfig
 from iarap.model.sdf import NeuralSDFConfig
-from iarap.utils import trilinear_interp, gradient, euler_to_rotation
+from iarap.utils import gradient, euler_to_rotation
 from iarap.utils.misc import detach_model
 
 
@@ -113,10 +114,10 @@ class SDFRenderer:
     #     dx = 1.0 / self.config.resolution
     #     return np.floor_divide(query, dx).astype(np.int32)
 
-    def render_volumetric_function(self, volume):
-        volume = vedo.Volume(volume)
-        plt = vedo.applications.IsosurfaceBrowser(volume, use_gpu=True, c='gold')
-        plt.show(axes=7, bg2='lb').close()
+    # def render_volumetric_function(self, volume):
+    #     volume = vedo.Volume(volume)
+    #     plt = vedo.applications.IsosurfaceBrowser(volume, use_gpu=True, c='gold')
+    #     plt.show(axes=7, bg2='lb').close()
 
     def run(self):
 
@@ -126,19 +127,22 @@ class SDFRenderer:
 
         live_picks, frozen_picks = [], []
         output_file = "path/to/point/selection/file.txt"
+        input_select = "path/to/point/selection/file.txt"
         points_to_export = 'live'
         viewed_level_set = 0.0
         last_level_set = viewed_level_set
         verts, faces = self.extract_mesh(level=0)
         tx, ty, tz = 0.0, 0.0, 0.0
         rx, ry, rz = 0.0, 0.0, 0.0
+        duplicate = False
+        clear_only_frozen = True
 
         def custom_callback():
             io = psim.GetIO()
-            nonlocal live_picks, frozen_picks, output_file, points_to_export
+            nonlocal live_picks, frozen_picks, output_file, input_select, points_to_export
             nonlocal verts, faces
             nonlocal viewed_level_set, last_level_set
-            nonlocal tx, ty, tz, rx, ry, rz
+            nonlocal tx, ty, tz, rx, ry, rz, duplicate, clear_only_frozen
 
             if io.MouseClicked[0] and io.KeyCtrl:
                 screen_coords = io.MousePos
@@ -174,6 +178,7 @@ class SDFRenderer:
                     ps.remove_point_cloud("PickedPoints")
 
             psim.Separator()
+            _, input_select = psim.InputText("Load selection file", input_select)
             _, output_file = psim.InputText("Output file", output_file)
 
             changed = psim.BeginCombo("Which points to export", points_to_export)
@@ -192,15 +197,15 @@ class SDFRenderer:
                 edit_transform.update({ch_tx, ch_ty, ch_tz})
                 psim.TreePop()
 
-            if psim.TreeNode("Rotate"):
-                ch_rx, rx = psim.InputFloat("x", rx)
-                ch_ry, ry = psim.InputFloat("y", ry)
-                ch_rz, rz = psim.InputFloat("z", rz)
+            if psim.TreeNode("Rotate (euler)"):
+                ch_rx, rx = psim.InputFloat("deg x", rx)
+                ch_ry, ry = psim.InputFloat("deg y", ry)
+                ch_rz, rz = psim.InputFloat("deg z", rz)
                 edit_transform.update({ch_rx, ch_ry, ch_rz})
                 psim.TreePop()
 
             if True in edit_transform and ps.has_point_cloud("Live Picks"):
-                euler = torch.tensor([[rx, ry, rz]])
+                euler = torch.tensor([[np.deg2rad(rx), np.deg2rad(ry), np.deg2rad(rz)]])
                 translate = torch.tensor([tx, ty, tz])
                 rot = euler_to_rotation(euler).squeeze(0)
                 transform = torch.eye(4)
@@ -208,7 +213,7 @@ class SDFRenderer:
                 transform[:3,  3] = translate
                 ps.get_point_cloud("Live Picks").set_transform(transform.numpy())
 
-            if psim.Button("Freeze transforms"):
+            if psim.Button("Freeze transforms") and ps.has_point_cloud("Live Picks"):
                 transform = ps.get_point_cloud("Live Picks").get_transform()
                 points_to_transform = np.concatenate(
                     [np.stack(live_picks, axis=0), np.ones((len(live_picks), 1))], axis=-1)
@@ -216,17 +221,22 @@ class SDFRenderer:
                 frozen_picks += [x.squeeze() for x in np.split(transformed, transformed.shape[0], axis=0)]
                 ps.register_point_cloud("Frozen Picks", np.stack(frozen_picks, axis=0), enabled=True)
                 
-                live_picks = []
                 ps.get_point_cloud("Live Picks").set_transform(np.eye(4))
-                ps.remove_point_cloud("Live Picks")
                 tx, ty, tz, rx, ry, rz = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-
-            psim.SameLine()
-
-            if psim.Button("Clear points"):
-                if len(live_picks) > 0:
+                if not duplicate:
                     live_picks = []
                     ps.remove_point_cloud("Live Picks")
+            
+            psim.SameLine()
+
+            _, duplicate = psim.Checkbox("Keep live set", duplicate)
+
+            if psim.Button("Clear points"):
+                if len(live_picks) > 0 and not clear_only_frozen:
+                    live_picks = []
+                    ps.get_point_cloud("Live Picks").set_transform(np.eye(4))
+                    ps.remove_point_cloud("Live Picks")
+                    tx, ty, tz, rx, ry, rz = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
                     # self.shape_color[...] = 0.0
                 if len(frozen_picks) > 0:
                     frozen_picks = []
@@ -234,10 +244,13 @@ class SDFRenderer:
 
             psim.SameLine()
 
+            _, clear_only_frozen = psim.Checkbox("Only frozen", clear_only_frozen)
+
             if psim.Button("Save points"):
                 points = frozen_picks if points_to_export == 'frozen' else live_picks
                 if len(points) > 0:
                     print(f"Saving {points_to_export} points at {output_file}")
+                    pathlib.Path(output_file).parent.mkdir(parents=True, exist_ok=True)
                     try:
                         np.savetxt(output_file, np.stack(points, axis=0))
                     except:
@@ -245,6 +258,16 @@ class SDFRenderer:
                 else:
                     print(f"No {points_to_export} points to save.")
 
+            psim.SameLine()
+
+            if psim.Button("Load points"):
+                print(f"Loading points from {input_select}")
+                try:
+                    loaded = np.loadtxt(input_select)
+                    live_picks += [x.squeeze() for x in np.split(loaded, loaded.shape[0], axis=0)]
+                    ps.register_point_cloud("Live Picks", np.stack(live_picks, axis=0), enabled=True)
+                except:
+                    print("Invalid file.")
 
             # psim.Separator()
             # psim.TextUnformatted("Current picks:\n" + \

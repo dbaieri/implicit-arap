@@ -61,7 +61,7 @@ deform_sdf_entrypoint = DeformTrainerConfig(
 )
 
 render_sdf_entrypoint = SDFRendererConfig(
-    load_shape=Path('assets/weights/armadillo.pt'),
+    load_shape=Path('assets/weights/buddha.pt'),
     # load_deformation=Path('wandb/run-20240304_160841-bh9r4jzt/files/checkpoints/neural_rotation.pt'),
     chunk=300000,
     resolution=512
