@@ -66,6 +66,13 @@ class SDFRenderer:
         except:
             verts = np.empty([0, 3], dtype=np.float32)
             faces = np.empty([0, 3], dtype=np.int32)
+        if self.deformation_model is not None:
+            verts = torch.from_numpy(verts).to(self.config.device, torch.float)
+            out_verts = []
+            for sample in torch.split(verts, self.config.chunk, dim=0):
+                transformed = self.deformation_model.transform(sample)
+                out_verts.append(transformed.cpu().detach().numpy())
+            verts = np.concatenate(out_verts, axis=0)
         return verts, faces
     
     # def sdf_functional_numpy(self, query):
@@ -74,9 +81,9 @@ class SDFRenderer:
     
     def sdf_functional(self, query):
         sample = query
-        if self.deformation_model is not None:
-            # rotations = self.deformation_model(sample)['rot']
-            sample = self.deformation_model.transform(sample)  # (rotations.transpose(-1, -2) @ sample[..., None]).squeeze(-1)
+        # if self.deformation_model is not None:
+        #     # rotations = self.deformation_model(sample)['rot']
+        #     sample = self.deformation_model.transform(sample)  # (rotations.transpose(-1, -2) @ sample[..., None]).squeeze(-1)
         model_out = self.shape_model(sample)
         return model_out['dist']
     

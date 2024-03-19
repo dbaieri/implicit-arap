@@ -97,5 +97,5 @@ class NeuralRTF(SDF):
                   x_in: Float[Tensor, "*batch in_dim"],
                   ) -> Float[Tensor, "*batch in_dim"]:
         outputs = self(x_in)
-        rotated = (outputs['rot'].transpose(-1, -2) @ x_in[..., None]).squeeze(-1) - outputs['transl']
+        rotated = (outputs['rot'] @ x_in[..., None]).squeeze(-1) + outputs['transl']
         return rotated

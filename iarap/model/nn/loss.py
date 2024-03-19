@@ -204,7 +204,7 @@ class PatchARAPLoss(nn.Module):
         rot_verts_edges = transformed_verts[:, idx[0, :], :] - transformed_verts[:, idx[1, :], :]
 
         edges_source = patch_verts[:, idx[0, :], :] - patch_verts[:, idx[1, :], :]
-        rot_edges = (rotations[:, idx[0, :], ...] @ edges_source[..., None]).squeeze(-1) + translations[:, idx[0, :], :]
+        rot_edges = (rotations[:, idx[0, :], ...] @ edges_source[..., None]).squeeze(-1)  # + translations[:, idx[0, :], :]
 
         if alternation == 0:
             rot_edges = rot_edges.detach()
