@@ -3,20 +3,20 @@ import torch
 import torch.autograd as ad
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 
 from torch import Tensor
 from jaxtyping import Float
-from typing import Optional, Dict, Type, Tuple, Any
-from dataclasses import dataclass, field
+from typing import Optional, Tuple
 
-from iarap.config.base_config import InstantiateConfig
-from iarap.model.nn import MLP, FourierFeatsEncoding
-from iarap.utils import to_immutable_dict, cross_skew_matrix
+from iarap.utils import cross_skew_matrix
 
 
 
 class SDF(nn.Module):
+
+    """
+    Abstract base classes for torch-based signed distance functions.
+    """
 
     def __init__(self, dim: int):
         super(SDF, self).__init__()
@@ -24,67 +24,6 @@ class SDF(nn.Module):
 
     def distance(self, x_in: Float[Tensor, "*batch in_dim"]) -> Float[Tensor, "*batch 1"]:
         raise NotImplementedError()
-    
-    def gradient(self, 
-                 x_in: Float[Tensor, "*batch in_dim"],
-                 dist: Optional[Float[Tensor, "*batch 1"]] = None) -> Float[Tensor, "*batch 3"]:
-        raise NotImplementedError()
-    
-
-@dataclass
-class NeuralSDFConfig(InstantiateConfig):
-
-    _target: Type = field(default_factory=lambda: NeuralSDF)
-    in_dim: int = 3
-    num_layers: int = 8
-    layer_width: int = 256
-    out_dim: int = 1
-    skip_connections: Tuple[int] = (4,)
-    activation: str = 'Softplus'
-    act_defaults: Dict[str, Any] = to_immutable_dict({'beta': 100})
-    num_frequencies: int = 6
-    encoding_with_input: bool = True
-    geometric_init: bool = True
-    radius_init: float = 0.5
-
-
-class NeuralSDF(SDF):
-
-    def __init__(self, config: NeuralSDFConfig):
-        super(NeuralSDF, self).__init__(config.in_dim)
-        self.config = config
-        self.encoding = FourierFeatsEncoding(self.config.in_dim,
-                                             self.config.num_frequencies,
-                                             self.config.encoding_with_input)
-        self.network = MLP(self.encoding.get_out_dim(),
-                           self.config.num_layers,
-                           self.config.layer_width,
-                           self.config.out_dim,
-                           self.config.skip_connections,
-                           getattr(nn, self.config.activation)(**self.config.act_defaults))
-        if self.config.geometric_init:
-            self.geometric_init(self.config.radius_init)
-
-    def geometric_init(self, rad):
-        for j, lin in enumerate(self.network.layers):
-            if j == len(self.network.layers) - 1:
-                torch.nn.init.normal_(lin.weight, mean=np.sqrt(np.pi) / np.sqrt(lin.in_features), std=0.0001)
-                torch.nn.init.constant_(lin.bias, -rad)
-            elif self.encoding is not None and j == 0:
-                torch.nn.init.constant_(lin.bias, 0.0)
-                torch.nn.init.constant_(lin.weight, 0.0)
-                torch.nn.init.normal_(lin.weight[:, :self.dim], 0.0, np.sqrt(2) / np.sqrt(lin.out_features))
-            elif self.encoding is not None and j in self.network.skip_connections:
-                torch.nn.init.constant_(lin.bias, 0.0)
-                torch.nn.init.normal_(lin.weight, 0.0, np.sqrt(2) / np.sqrt(lin.out_features))
-                torch.nn.init.constant_(lin.weight[:, self.dim:self.network.in_dim], 0.0)
-            else:
-                torch.nn.init.constant_(lin.bias, 0.0)
-                torch.nn.init.normal_(lin.weight, 0.0, np.sqrt(2) / np.sqrt(lin.out_features))
-            self.network.layers[j] = nn.utils.parametrizations.weight_norm(lin)
-
-    def distance(self, x_in: Float[Tensor, "*batch in_dim"]) -> Float[Tensor, "*batch 1"]:
-        return self.network(self.encoding(x_in))
     
     def gradient(self, 
                  x_in: Float[Tensor, "*batch in_dim"],
@@ -135,7 +74,7 @@ class NeuralSDF(SDF):
             x = x_in.requires_grad_() if grad is None else x_in
             dist = self.distance(x)
             grad = self.gradient(x, dist, differentiable)
-        d = self.config.in_dim
+        d = x_in.shape[-1]
         normal = F.normalize(grad, dim=-1)
         I = torch.eye(d, device=x_in.device).view(*([1] * (x_in.dim() - 1)), d, d).expand(*x_in.shape[:-1], -1, -1)
         z = I[..., 2]
@@ -146,7 +85,6 @@ class NeuralSDF(SDF):
         return I + cross_matrix + (cross_matrix @ cross_matrix) * scale
         # return F.normalize(I - (normal.unsqueeze(-2) * normal.unsqueeze(-1)), dim=-2)
 
-        
     def sample_zero_level_set(self,
                               num_samples: int,
                               threshold: float = 0.05,
@@ -167,18 +105,4 @@ class NeuralSDF(SDF):
         for it in range(num_projections):
             sampled_pts = self.project_nearest(sampled_pts)
         return sampled_pts
-
-    def forward(self, 
-                x_in: Float[Tensor, "*batch in_dim"],
-                with_grad: bool = False,
-                differentiable_grad: bool = False) -> Dict[str, Float[Tensor, "*batch f"]]:
-        outputs = {}
-        x = x_in
-        if with_grad:
-            x = x.requires_grad_()
-        dist = self.distance(x)
-        outputs['dist'] = dist
-        if with_grad:
-            grad = self.gradient(x, dist, differentiable_grad)
-            outputs['grad'] = grad
-        return outputs
+    

@@ -1,0 +1,9 @@
+handles:
+  static:
+    positions:
+      - lower_body_back
+  moving:
+    positions:
+      - head
+    transform:
+      - head_uf

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from iarap.config.base_config import InstantiateConfig
 from iarap.data.mesh import MeshDataConfig
 from iarap.model.nn.loss import IGRConfig
-from iarap.model.sdf import NeuralSDFConfig
+from iarap.model.neural_sdf import NeuralSDFConfig
 from iarap.train.trainer import Trainer
 from iarap.train.optim import AdamConfig, MultiStepSchedulerConfig
 

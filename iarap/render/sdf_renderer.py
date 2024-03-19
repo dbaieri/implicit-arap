@@ -15,8 +15,8 @@ from pathlib import Path
 from tqdm import tqdm
 
 from iarap.config.base_config import InstantiateConfig
-from iarap.model.rot_net import NeuralRFConfig
-from iarap.model.sdf import NeuralSDFConfig
+from iarap.model.neural_rtf import NeuralRTFConfig
+from iarap.model.neural_sdf import NeuralSDFConfig
 from iarap.utils import gradient, euler_to_rotation
 from iarap.utils.misc import detach_model
 
@@ -75,8 +75,8 @@ class SDFRenderer:
     def sdf_functional(self, query):
         sample = query
         if self.deformation_model is not None:
-            rotations = self.deformation_model(sample)['rot']
-            sample = (rotations.transpose(-1, -2) @ sample[..., None]).squeeze(-1)
+            # rotations = self.deformation_model(sample)['rot']
+            sample = self.deformation_model.transform(sample)  # (rotations.transpose(-1, -2) @ sample[..., None]).squeeze(-1)
         model_out = self.shape_model(sample)
         return model_out['dist']
     
@@ -173,9 +173,14 @@ class SDFRenderer:
                 #                                   hit_dist=1e-7,
                 #                                   enabled=True)
                 # print("Rendering finished")
-                if len(picks) > 0:
-                    picks = []
-                    ps.remove_point_cloud("PickedPoints")
+                if len(live_picks) > 0:
+                    live_picks = []
+                if len(frozen_picks) > 0:
+                    frozen_picks = []
+                if ps.has_point_cloud("Live Picks"):
+                    ps.remove_point_cloud("Live Picks")
+                if ps.has_point_cloud("Frozen Picks"):
+                    ps.remove_point_cloud("Frozen Picks")
 
             psim.Separator()
             _, input_select = psim.InputText("Load selection file", input_select)
@@ -305,4 +310,4 @@ class SDFRendererConfig(InstantiateConfig):
     window_size: Tuple[int, int] = (1600, 1200)
     device: Literal['cpu', 'cuda'] = 'cuda'
     shape_model: NeuralSDFConfig = NeuralSDFConfig()
-    deformation_model: NeuralRFConfig = NeuralRFConfig()
+    deformation_model: NeuralRTFConfig = NeuralRTFConfig()

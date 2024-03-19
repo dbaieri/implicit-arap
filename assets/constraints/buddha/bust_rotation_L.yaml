@@ -1,0 +1,9 @@
+handles:
+  static:
+    positions:
+      - base
+  moving:
+    positions:
+      - right_hand
+    transform:
+      - right_hand_rotate_left

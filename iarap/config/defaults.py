@@ -4,13 +4,13 @@ from pathlib import Path
 
 from iarap.data.mesh import MeshDataConfig
 from iarap.model.nn.loss import DeformationLossConfig, IGRConfig
-from iarap.model.rot_net import NeuralRFConfig
-from iarap.model.sdf import NeuralSDFConfig
+from iarap.model.neural_rtf import NeuralRTFConfig
+from iarap.model.neural_sdf import NeuralSDFConfig
 from iarap.render.sdf_renderer import SDFRendererConfig
 from iarap.train.deform_trainer import DeformTrainerConfig
 from iarap.train.optim import AdamConfig, MultiStepSchedulerConfig
 from iarap.train.sdf_trainer import SDFTrainerConfig
-from iarap.utils.misc import to_immutable_list
+
 
 
 train_sdf_entrypoint = SDFTrainerConfig(
@@ -35,9 +35,9 @@ train_sdf_entrypoint = SDFTrainerConfig(
 )
 
 deform_sdf_entrypoint = DeformTrainerConfig(    
-    num_steps=2000,
+    num_steps=1000,
     pretrained_shape=Path('./assets/weights/armadillo.pt'),
-    handles_spec=Path('assets/constraints/armadillo/test_1.yaml'),
+    handles_spec=Path('assets/constraints/armadillo/arm_front.yaml'),
     delaunay_sample=30,
     zero_samples=1000,
     space_samples=1000,
@@ -48,7 +48,7 @@ deform_sdf_entrypoint = DeformTrainerConfig(
     plane_coords_scale=0.001,
     device='cuda',
     shape_model=NeuralSDFConfig(),
-    rotation_model=NeuralRFConfig(),
+    rotation_model=NeuralRTFConfig(),
     loss=DeformationLossConfig(
         moving_handle_loss_w=1000, 
         static_handle_loss_w=1000, 
@@ -61,8 +61,11 @@ deform_sdf_entrypoint = DeformTrainerConfig(
 )
 
 render_sdf_entrypoint = SDFRendererConfig(
-    load_shape=Path('assets/weights/buddha.pt'),
+    load_shape=Path('assets/weights/armadillo.pt'),
     # load_deformation=Path('wandb/run-20240304_160841-bh9r4jzt/files/checkpoints/neural_rotation.pt'),
+    # load_deformation=Path('wandb/run-20240314_103509-58hdqszn/files/checkpoints/neural_rotation.pt'),
+    # load_deformation=Path('wandb/buddha_bust_rotate_L/files/checkpoints/neural_rotation.pt'),
+    load_deformation=Path('wandb/run-20240319_112559-hf9i1frr/files/checkpoints/neural_rotation.pt'),
     chunk=300000,
     resolution=512
 )

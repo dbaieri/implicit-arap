@@ -18,8 +18,8 @@ from pathlib import Path
 
 from iarap.config.base_config import InstantiateConfig
 from iarap.model.nn.loss import DeformationLossConfig, PatchARAPLoss
-from iarap.model.rot_net import NeuralRF, NeuralRFConfig
-from iarap.model.sdf import NeuralSDF, NeuralSDFConfig
+from iarap.model.neural_rtf import NeuralRTF, NeuralRTFConfig
+from iarap.model.neural_sdf import NeuralSDF, NeuralSDFConfig
 from iarap.model.arap import ARAPMesh
 from iarap.train.optim import AdamConfig, MultiStepSchedulerConfig
 from iarap.train.trainer import Trainer
@@ -57,7 +57,8 @@ class DeformTrainer(Trainer):
         self.source: NeuralSDF = self.config.shape_model.setup().to(self.config.device).eval()
         self.source.load_state_dict(torch.load(self.config.pretrained_shape))
         detach_model(self.source)
-        self.model: NeuralRF = self.config.rotation_model.setup().to(self.config.device).train()
+        self.model: NeuralRTF = self.config.rotation_model.setup().to(self.config.device).train()
+        self.model.set_sdf_callable(self.source.distance)
         self.loss = self.config.loss.setup()
 
     def sample_domain(self, nsamples):
@@ -153,7 +154,9 @@ class DeformTrainer(Trainer):
                                      alpha=0.4)
             vedo.show(base_mesh, arap_mesh, transforms).close()
             
-        rotations = self.model(level_set_verts.detach())['rot']
+        rtf_out = self.model(level_set_verts.detach())
+        rotations = rtf_out['rot']
+        translations = rtf_out['transl']
 
         handle_idx = torch.stack([
             torch.arange(0, handles.shape[0], device=self.device, dtype=torch.long),
@@ -162,9 +165,9 @@ class DeformTrainer(Trainer):
         moving_idx = handle_idx[:self.handles_moving.shape[0], :]
         static_idx = handle_idx[self.handles_moving.shape[0]:, :]
         loss_dict = self.loss(level_set_verts.detach(), 
-                              triangles, rotations, 
+                              triangles, rotations, translations,
                               moving_idx, static_idx, 
-                              handle_values, self.step % 2)
+                              handle_values, 2)  # self.step % 2)
         return loss_dict
     
     def postprocess(self):
@@ -194,7 +197,7 @@ class DeformTrainerConfig(InstantiateConfig):
     seed: int = 123456
 
     shape_model: NeuralSDFConfig = NeuralSDFConfig()
-    rotation_model: NeuralRFConfig = NeuralRFConfig()
+    rotation_model: NeuralRTFConfig = NeuralRTFConfig()
     loss: DeformationLossConfig = DeformationLossConfig()
     optimizer: AdamConfig = AdamConfig()
     scheduler: MultiStepSchedulerConfig = MultiStepSchedulerConfig()

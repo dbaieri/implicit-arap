@@ -1,7 +1,7 @@
 handles:
   static:
     positions:
-      - left_foot
+      # - left_foot
       - right_foot
   moving:
     positions:
