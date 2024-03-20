@@ -200,7 +200,31 @@ class SDFRenderer:
                     if selected:
                         points_to_export = val
                 psim.EndCombo()
+                
+            if psim.Button("Save points"):
+                points = frozen_picks if points_to_export == 'frozen' else live_picks
+                if len(points) > 0:
+                    print(f"Saving {points_to_export} points at {output_file}")
+                    pathlib.Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        np.savetxt(output_file, np.stack(points, axis=0))
+                    except:
+                        print("Invalid output file location.")
+                else:
+                    print(f"No {points_to_export} points to save.")
 
+            psim.SameLine()
+
+            if psim.Button("Load points"):
+                print(f"Loading points from {input_select}")
+                try:
+                    loaded = np.loadtxt(input_select)
+                    live_picks += [x.squeeze() for x in np.split(loaded, loaded.shape[0], axis=0)]
+                    ps.register_point_cloud("Live Picks", np.stack(live_picks, axis=0), enabled=True)
+                except:
+                    print("Invalid file.")
+
+            psim.Separator()
             edit_transform = set()
             if psim.TreeNode("Translate"):
                 ch_tx, tx = psim.InputFloat("x", tx)
@@ -225,6 +249,10 @@ class SDFRenderer:
                 transform[:3,  3] = translate
                 ps.get_point_cloud("Live Picks").set_transform(transform.numpy())
 
+            _, duplicate = psim.Checkbox("Keep live set", duplicate)
+
+            psim.SameLine()
+
             if psim.Button("Freeze transforms") and ps.has_point_cloud("Live Picks"):
                 transform = ps.get_point_cloud("Live Picks").get_transform()
                 points_to_transform = np.concatenate(
@@ -239,9 +267,9 @@ class SDFRenderer:
                     live_picks = []
                     ps.remove_point_cloud("Live Picks")
             
-            psim.SameLine()
+            _, clear_only_frozen = psim.Checkbox("Only frozen", clear_only_frozen)
 
-            _, duplicate = psim.Checkbox("Keep live set", duplicate)
+            psim.SameLine()
 
             if psim.Button("Clear points"):
                 if len(live_picks) > 0 and not clear_only_frozen:
@@ -254,32 +282,6 @@ class SDFRenderer:
                     frozen_picks = []
                     ps.remove_point_cloud("Frozen Picks")
 
-            psim.SameLine()
-
-            _, clear_only_frozen = psim.Checkbox("Only frozen", clear_only_frozen)
-
-            if psim.Button("Save points"):
-                points = frozen_picks if points_to_export == 'frozen' else live_picks
-                if len(points) > 0:
-                    print(f"Saving {points_to_export} points at {output_file}")
-                    pathlib.Path(output_file).parent.mkdir(parents=True, exist_ok=True)
-                    try:
-                        np.savetxt(output_file, np.stack(points, axis=0))
-                    except:
-                        print("Invalid output file location.")
-                else:
-                    print(f"No {points_to_export} points to save.")
-
-            psim.SameLine()
-
-            if psim.Button("Load points"):
-                print(f"Loading points from {input_select}")
-                try:
-                    loaded = np.loadtxt(input_select)
-                    live_picks += [x.squeeze() for x in np.split(loaded, loaded.shape[0], axis=0)]
-                    ps.register_point_cloud("Live Picks", np.stack(live_picks, axis=0), enabled=True)
-                except:
-                    print("Invalid file.")
 
             # psim.Separator()
             # psim.TextUnformatted("Current picks:\n" + \
