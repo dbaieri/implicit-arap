@@ -163,6 +163,7 @@ cython_debug/
 *.ply
 *.obj
 *.off
+*.stl
 .vscode/
 wandb/
 .polyscope.ini
