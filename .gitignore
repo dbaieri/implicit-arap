@@ -168,3 +168,4 @@ cython_debug/
 wandb/
 .polyscope.ini
 imgui.ini
+test.py

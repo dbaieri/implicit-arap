@@ -1,0 +1,9 @@
+handles:
+  static:
+    positions:
+      - base
+  moving:
+    positions:
+      - top
+    transform:
+      - top_rotate

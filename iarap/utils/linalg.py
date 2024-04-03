@@ -1,7 +1,10 @@
 import torch
+import torch.nn.functional as F
 
 from torch import Tensor
 from jaxtyping import Float
+
+from iarap.utils.diffop import cross_skew_matrix
 
 
 def least_sq_with_known_values(A, b, known_mask=None, known_val=None):
@@ -80,3 +83,12 @@ def euler_to_rotation(euler: Float[Tensor, "*batch 3"]) -> Float[Tensor, "*batch
 		2 * xz - 2 * wy, 2 * wx + 2 * yz, w2 - x2 - y2 + z2
 	], dim=-1).view(*B, 3, 3)
 	return rot_mat
+
+def align_vectors(a, b):
+	a, b = F.normalize(a, dim=-1), F.normalize(b, dim=-1)
+	I = torch.diag_embed(torch.ones_like(a))
+	v = torch.linalg.cross(a, b, dim=-1)
+	c = (b * a).sum(dim=-1)
+	cross_matrix = cross_skew_matrix(v)
+	scale = ((1 - c) / v.norm(dim=-1).pow(2)).view(*cross_matrix.shape[:-2], 1, 1)
+	return I + cross_matrix + (cross_matrix @ cross_matrix) * scale

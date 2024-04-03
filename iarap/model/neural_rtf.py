@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 from iarap.config.base_config import InstantiateConfig
 from iarap.model.base_sdf import SDF
-from iarap.model.nn import MLP, FourierFeatsEncoding
+from iarap.model.nn import MLP, FourierFeatsEncoding, InvertibleRtMLP, InvertibleMLP3D
 from iarap.utils import to_immutable_dict, euler_to_rotation
 
     
@@ -37,6 +37,7 @@ class NeuralRTF(SDF):
         super(NeuralRTF, self).__init__(config.in_dim)
         self.config = config
         self.dim = config.in_dim
+        '''
         self.encoding = FourierFeatsEncoding(self.config.in_dim,
                                              self.config.num_frequencies,
                                              self.config.encoding_with_input)
@@ -46,8 +47,10 @@ class NeuralRTF(SDF):
                            self.config.out_dim,
                            self.config.skip_connections,
                            getattr(nn, self.config.activation)(**self.config.act_defaults))
-        if self.config.geometric_init:
-            self.geometric_init()
+        '''
+        self.network = InvertibleMLP3D(1, 128, 2, [], 6)  # TODO actually pass configuration
+        # if self.config.geometric_init:
+        #     self.geometric_init()
         self.sdf_callable = lambda x: x.norm(dim=-1, keepdim=True) - 0.5
 
     def set_sdf_callable(self, dist_fn):
@@ -56,7 +59,7 @@ class NeuralRTF(SDF):
     def distance(self, x_in: Float[Tensor, "*batch in_dim"]) -> Float[Tensor, "*batch 1"]:
         x = self.transform(x_in)
         return self.sdf_callable(x)
-
+    '''
     def geometric_init(self):
         for j, lin in enumerate(self.network.layers):
             if j == len(self.network.layers) - 1:
@@ -75,27 +78,29 @@ class NeuralRTF(SDF):
                 torch.nn.init.constant_(lin.bias, 0.0)
                 torch.nn.init.normal_(lin.weight, 0.0, np.sqrt(2) / np.sqrt(lin.out_features))
             self.network.layers[j] = nn.utils.parametrizations.weight_norm(lin)
-
+    '''
     # def euler(self, x_in: Float[Tensor, "*batch in_dim"]) -> Float[Tensor, "*batch 3"]:
     #     return self.network(self.encoding(x_in))
 
     def forward(self, 
                 x_in: Float[Tensor, "*batch in_dim"],
-                return_euler: bool = False
+                # return_euler: bool = False
                 ) -> Dict[str, Float[Tensor, "*batch f"]]:
         outputs = {}
         # euler = self.euler(x_in)
-        rt = self.network(self.encoding(x_in))
-        euler, transl = rt[..., :3], rt[..., 3:]
-        outputs['rot'] = euler_to_rotation(euler)
-        outputs['transl'] = transl  
-        if return_euler:
-            outputs['euler'] = euler
+        # rt = self.network(self.encoding(x_in))
+        _, R, t = self.network(x_in)
+        # euler, transl = rt[..., :3], rt[..., 3:]
+        outputs['rot'] = R  # euler_to_rotation(euler)
+        outputs['transl'] = t  # transl  
+        # if return_euler:
+        #     outputs['euler'] = euler
         return outputs
     
     def transform(self, 
                   x_in: Float[Tensor, "*batch in_dim"],
                   ) -> Float[Tensor, "*batch in_dim"]:
-        outputs = self(x_in)
-        rotated = (outputs['rot'] @ x_in[..., None]).squeeze(-1) + outputs['transl']
-        return rotated
+        # outputs = self(x_in)
+        # rotated = (outputs['rot'] @ x_in[..., None]).squeeze(-1) + outputs['transl']
+        # return rotated
+        return self.network.inverse(x_in)

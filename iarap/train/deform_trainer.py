@@ -109,54 +109,18 @@ class DeformTrainer(Trainer):
             triangles_all = triangles.unsqueeze(0) + (level_set_verts.shape[1] * torch.arange(0, level_set_verts.shape[0], device=self.device).view(-1, 1, 1))
 
             surface_verts_flat = level_set_verts.view(-1, 3)
-            triangles_flat = triangles_all.view(-1, 3)
-            
-            # w = self.loss.arap_loss.get_cot_weights(level_set_verts, triangles).sum(dim=-1).view(-1)
-            # cmap = vedo.color_map(w.cpu().detach()) * 255.
-            # cmap = torch.zeros_like(surface_verts_flat)
-            
+            triangles_flat = triangles_all.view(-1, 3)           
 
             vis_mesh = vedo.Mesh([surface_verts_flat.cpu().detach(), triangles_flat.cpu().long()]).wireframe()
             # vis_mesh.pointcolors = cmap
             # tangents = vedo.Mesh([tangent_pts.cpu().detach().view(-1, 3), triangles_flat.cpu().long()], c='black').wireframe()
             normals = vedo.Arrows(samples.detach().cpu().view(-1, 3), (samples + patch_normals * 0.02).cpu().detach().view(-1, 3))
             vedo.show(vis_mesh, normals).close()  
-        
-        if DEBUG:
-            import trimesh
-            m = trimesh.load('assets\\mesh\\cactus.obj', force='mesh')
-            centroid = torch.tensor(m.centroid, device='cuda')
-            mesh_vert = torch.tensor(m.vertices).float().cuda()[:, [0, 2, 1]]
-            mesh_triv = torch.tensor(m.faces).long().cuda()
-            mesh_vert -= centroid.unsqueeze(0)
-            mesh_vert /= mesh_vert.abs().max()
-            mesh_vert *= 0.8
-            mesh = ARAPMesh(mesh_vert, mesh_triv, device=self.device)
-            
-            fixed_verts = (mesh_vert[:, 1] < -0.65).nonzero().squeeze()
-            handle_verts = ((mesh_vert[:, 1] > 0.65) & \
-                            ((mesh_vert[:, 2] > -0.2) & (mesh_vert[:, 2] < 0.2))).nonzero().squeeze()
-            handle_verts_pos = mesh_vert[handle_verts, :] + torch.tensor([[0.0, -0.5, 0.5]], device=self.device)
-            
-            test = mesh.solve(fixed_verts, handle_verts, handle_verts_pos, track_energy=True, n_its=200)
-            base_mesh = vedo.Mesh([mesh.vertices.cpu(), mesh.faces.cpu()], c='black').wireframe()
-            colors = torch.zeros_like(test)
-            colors[:, 2] = 255.0
-            colors[fixed_verts, 0] = 255.0
-            colors[fixed_verts, 2] = 0.0
-            colors[handle_verts, 1] = 255.0
-            colors[handle_verts, 2] = 0.0
-            base_mesh.pointcolors = colors.cpu()
-            arap_mesh = vedo.Mesh([test.cpu().detach(), mesh.faces.cpu()])
-            transforms = vedo.Arrows(mesh_vert[handle_verts, :].cpu(), 
-                                     handle_verts_pos.cpu(), 
-                                     shaft_radius=0.01, head_radius=0.03, head_length=0.1,
-                                     alpha=0.4)
-            vedo.show(base_mesh, arap_mesh, transforms).close()
-            
+                    
         rtf_out = self.model(level_set_verts.detach())
         rotations = rtf_out['rot']
         translations = rtf_out['transl']
+        test_invert = self.model.transform((rotations @ level_set_verts[..., None]).squeeze(-1) + translations)
 
         handle_idx = torch.stack([
             torch.arange(0, handles.shape[0], device=self.device, dtype=torch.long),

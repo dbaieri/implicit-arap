@@ -38,7 +38,6 @@ class SDFRenderer:
             detach_model(self.deformation_model)
         else:
             self.deformation_model = None
-        # self.shape_color = torch.zeros([self.config.resolution] * 3, dtype=torch.float)
         vol = self.make_volume()
         self.cached_sdf = self.evaluate_model(vol).numpy()
 
@@ -66,24 +65,19 @@ class SDFRenderer:
         except:
             verts = np.empty([0, 3], dtype=np.float32)
             faces = np.empty([0, 3], dtype=np.int32)
-        if self.deformation_model is not None:
-            verts = torch.from_numpy(verts).to(self.config.device, torch.float)
-            out_verts = []
-            for sample in torch.split(verts, self.config.chunk, dim=0):
-                transformed = self.deformation_model.transform(sample)
-                out_verts.append(transformed.cpu().detach().numpy())
-            verts = np.concatenate(out_verts, axis=0)
+        # if self.deformation_model is not None:
+        #     verts = torch.from_numpy(verts).to(self.config.device, torch.float)
+        #     out_verts = []
+        #     for sample in torch.split(verts, self.config.chunk, dim=0):
+        #         transformed = self.deformation_model.network(sample)[0]  # transform(sample)
+        #         out_verts.append(transformed.cpu().detach().numpy())
+        #     verts = np.concatenate(out_verts, axis=0)
         return verts, faces
-    
-    # def sdf_functional_numpy(self, query):
-    #     sample = torch.from_numpy(query).float().to(self.config.device).reshape(-1, 3).contiguous()
-    #     return self.sdf_functional(sample).reshape(-1).cpu().numpy()
-    
+        
     def sdf_functional(self, query):
         sample = query
-        # if self.deformation_model is not None:
-        #     # rotations = self.deformation_model(sample)['rot']
-        #     sample = self.deformation_model.transform(sample)  # (rotations.transpose(-1, -2) @ sample[..., None]).squeeze(-1)
+        if self.deformation_model is not None:
+            sample = self.deformation_model.transform(sample)  
         model_out = self.shape_model(sample)
         return model_out['dist']
     
@@ -94,37 +88,6 @@ class SDFRenderer:
             grad = F.normalize(gradient(dist, query), dim=-1)
             query = (query - dist * grad).detach().requires_grad_()
         return query.detach()
-
-    # def color_functional_numpy(self, query):
-    #     # idx = self.point_3d_to_grid_idx(query)
-    #     # return self.shape_color[idx[:, 0], idx[:, 1], idx[:, 2]]
-    #     query = np.clip(query, -0.99, 0.99)
-    #     return trilinear_interp(self.shape_color.unsqueeze(0).unsqueeze(-1), 
-    #                             torch.from_numpy(query).float().view(1, -1, 3),
-    #                             self.config.resolution).reshape(-1, 1).cpu().numpy()
-    
-    # def sphere_trace(self, query, dir, n_its=5):
-    #     query = torch.from_numpy(query).float().to(self.config.device).view(-1, 3)
-    #     dir = torch.from_numpy(dir).float().to(self.config.device).view(-1, 3)
-    #     for i in range(n_its):
-    #         dist = self.sdf_functional(query)
-    #         query = query + dist * dir
-    #     return query
-
-    # def set_picked(self, query):
-    #     idx = self.point_3d_to_grid_idx(query)
-    #     self.shape_color[idx[:, 0], idx[:, 1], idx[:, 2]] = 1.0
-
-    # def point_3d_to_grid_idx(self, query):
-    #     query = np.clip(query, -0.99, 0.99)
-    #     query = (query + 1.0) / 2.0  # Now [0; 1]
-    #     dx = 1.0 / self.config.resolution
-    #     return np.floor_divide(query, dx).astype(np.int32)
-
-    # def render_volumetric_function(self, volume):
-    #     volume = vedo.Volume(volume)
-    #     plt = vedo.applications.IsosurfaceBrowser(volume, use_gpu=True, c='gold')
-    #     plt.show(axes=7, bg2='lb').close()
 
     def run(self):
 
@@ -173,13 +136,7 @@ class SDFRenderer:
                 last_level_set = viewed_level_set
                 verts, faces = self.extract_mesh(level=viewed_level_set)
                 ps.register_surface_mesh("NeuralSDF", verts, faces, enabled=True)
-                # ps.render_implicit_surface_scalar("NeuralSDF", 
-                #                                   self.sdf_functional_numpy, 
-                #                                   self.color_functional_numpy,
-                #                                   mode='sphere_march',
-                #                                   hit_dist=1e-7,
-                #                                   enabled=True)
-                # print("Rendering finished")
+
                 if len(live_picks) > 0:
                     live_picks = []
                 if len(frozen_picks) > 0:
@@ -282,26 +239,10 @@ class SDFRenderer:
                     frozen_picks = []
                     ps.remove_point_cloud("Frozen Picks")
 
-
-            # psim.Separator()
-            # psim.TextUnformatted("Current picks:\n" + \
-            #                      (str(np.stack(picks, axis=0)) if len(picks) > 0 else str([])))
-
         ps.init()
-        # ps.render_implicit_surface_scalar("NeuralSDF", 
-        #                                   self.sdf_functional_numpy, 
-        #                                   self.color_functional_numpy,
-        #                                   mode='sphere_march',
-        #                                   hit_dist=1e-7,
-        #                                   enabled=True)
         ps.register_surface_mesh("NeuralSDF", verts, faces, enabled=True)
         ps.set_user_callback(custom_callback)
         ps.show()
-
-        # volume = self.make_volume()
-        # f_volume = self.evaluate_model(volume)
-        # self.render_volumetric_function(f_volume.numpy())
-
     
         
 

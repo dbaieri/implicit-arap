@@ -1,0 +1,9 @@
+handles:
+  static:
+    positions:
+      - center
+  moving:
+    positions:
+      - external
+    transform:
+      - ext_rotation

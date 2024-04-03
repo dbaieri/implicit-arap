@@ -36,7 +36,7 @@ train_sdf_entrypoint = SDFTrainerConfig(
 
 deform_sdf_entrypoint = DeformTrainerConfig(    
     num_steps=1000,
-    pretrained_shape=Path('./assets/weights/armadillo.pt'),
+    pretrained_shape=Path('./assets/weights/sdf/armadillo.pt'),
     handles_spec=Path('assets/constraints/armadillo/arm_front.yaml'),
     delaunay_sample=30,
     zero_samples=1000,
@@ -50,9 +50,9 @@ deform_sdf_entrypoint = DeformTrainerConfig(
     shape_model=NeuralSDFConfig(),
     rotation_model=NeuralRTFConfig(),
     loss=DeformationLossConfig(
-        moving_handle_loss_w=1000, 
-        static_handle_loss_w=1000, 
-        arap_loss_w=10
+        moving_handle_loss_w=1000,  # 1000, 
+        static_handle_loss_w=1000,  # 1000, 
+        arap_loss_w=100
     ),
     optimizer=AdamConfig(
         lr=1e-3
@@ -61,11 +61,11 @@ deform_sdf_entrypoint = DeformTrainerConfig(
 )
 
 render_sdf_entrypoint = SDFRendererConfig(
-    load_shape=Path('assets/weights/armadillo.pt'),
+    load_shape=Path('assets/weights/sdf/armadillo.pt'),
     # load_deformation=Path('wandb/run-20240304_160841-bh9r4jzt/files/checkpoints/neural_rotation.pt'),
     # load_deformation=Path('wandb/run-20240314_103509-58hdqszn/files/checkpoints/neural_rotation.pt'),
     # load_deformation=Path('wandb/buddha_bust_rotate_L/files/checkpoints/neural_rotation.pt'),
-    # load_deformation=Path('wandb/run-20240319_150258-e3wc9h8p/files/checkpoints/neural_rotation.pt'),
+    load_deformation=Path('wandb/run-20240402_172857-232tw1bj/files/checkpoints/neural_rotation.pt'),
     chunk=300000,
     resolution=512
 )
