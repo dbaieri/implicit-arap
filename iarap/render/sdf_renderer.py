@@ -40,6 +40,10 @@ class SDFRenderer:
             self.deformation_model = None
         vol = self.make_volume()
         self.cached_sdf = self.evaluate_model(vol).numpy()
+        if self.config.visualize_deform_sample > 0:
+            pts = torch.rand(self.config.visualize_deform_sample, 3, device=self.config.device) * 2 - 1
+            deform = self.deformation_model.deform(pts) - pts
+            self.vis_deform = np.concatenate([pts.cpu().detach().numpy(), deform.cpu().detach().numpy()], axis=-1)
 
     def make_volume(self):
         steps = torch.linspace(self.config.min_coord, 
@@ -241,6 +245,9 @@ class SDFRenderer:
 
         ps.init()
         ps.register_surface_mesh("NeuralSDF", verts, faces, enabled=True)
+        if self.config.visualize_deform_sample > 0:
+            deform_pc = ps.register_point_cloud("DeformPts", self.vis_deform[..., :3], radius=0.001)
+            deform_pc.add_vector_quantity("DeformVecs", self.vis_deform[..., 3:], enabled=True)
         ps.set_user_callback(custom_callback)
         ps.show()
     
@@ -253,7 +260,8 @@ class SDFRendererConfig(InstantiateConfig):
     _target: Type = field(default_factory=lambda: SDFRenderer)
     load_shape: Path = Path('./assets/weights/armadillo.pt')
     load_deformation: Path = None
-    deform_mode: Literal['implicit', 'explicit'] = 'explicit'
+    deform_mode: Literal['implicit', 'explicit', 'none'] = 'explicit'
+    visualize_deform_sample: int = 0
     min_coord: float = -1.0
     max_coord: float =  1.0
     resolution: int = 512

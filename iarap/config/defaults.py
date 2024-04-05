@@ -36,8 +36,8 @@ train_sdf_entrypoint = SDFTrainerConfig(
 
 deform_sdf_entrypoint = DeformTrainerConfig(    
     num_steps=1000,
-    pretrained_shape=Path('./assets/weights/sdf/cubes.pt'),
-    handles_spec=Path('assets/constraints/cubes/bending.yaml'),
+    pretrained_shape=Path('./assets/weights/sdf/armadillo.pt'),
+    handles_spec=Path('assets/constraints/armadillo/arm_front.yaml'),
     delaunay_sample=30,
     zero_samples=1000,
     space_samples=1000,

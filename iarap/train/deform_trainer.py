@@ -39,6 +39,11 @@ class DeformTrainer(Trainer):
         np.random.seed(config.seed)
         torch.manual_seed(config.seed)
 
+    def setup_optimizer(self):
+        param_groups = list(self.model.parameters()) + list(self.target.parameters())
+        self.optimizer = self.config.optimizer.setup(params=param_groups)
+        self.scheduler = self.config.scheduler.setup(optimizer=self.optimizer)
+
     def setup_data(self):
         # Avoids rewriting training function, does a single iteration per epoch
         self.loader = [0]  
@@ -59,6 +64,8 @@ class DeformTrainer(Trainer):
         detach_model(self.source)
         self.model: NeuralRTF = self.config.rotation_model.setup().to(self.config.device).train()
         self.model.set_sdf_callable(self.source.distance)
+        self.target: NeuralSDF = self.config.shape_model.setup().to(self.config.device).train()
+        self.target.load_state_dict(torch.load(self.config.pretrained_shape))
         self.loss = self.config.loss.setup()
 
     def sample_domain(self, nsamples):
@@ -131,6 +138,12 @@ class DeformTrainer(Trainer):
         loss_dict = self.loss(level_set_verts.detach(), 
                               triangles, rotations, translations,
                               moving_idx, static_idx, handle_values)
+        
+        with torch.no_grad():
+            gt_sdf = sample_dist.unsqueeze(1).expand(-1, level_set_verts.shape[1], -1)
+            deformed_verts = (rotations @ level_set_verts[..., None]).squeeze(-1) + translations
+        w = 3000 if self.step > 200 else 0 
+        loss_dict['sdf'] = w * (self.target.distance(deformed_verts) - gt_sdf).abs().mean()
         return loss_dict
     
     def postprocess(self):
@@ -138,6 +151,7 @@ class DeformTrainer(Trainer):
         print("Saving model weights in: {}".format(ckpt_dir))
         os.makedirs(ckpt_dir, exist_ok=True)
         torch.save(self.model.state_dict(), ckpt_dir + '/neural_rotation.pt')
+        torch.save(self.target.state_dict(), ckpt_dir + '/neural_sdf.pt')
 
 
 @dataclass
