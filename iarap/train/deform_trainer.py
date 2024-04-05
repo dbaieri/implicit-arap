@@ -120,7 +120,7 @@ class DeformTrainer(Trainer):
         rtf_out = self.model(level_set_verts.detach())
         rotations = rtf_out['rot']
         translations = rtf_out['transl']
-        test_invert = self.model.transform((rotations @ level_set_verts[..., None]).squeeze(-1) + translations)
+        # test_invert = self.model.inverse((rotations @ level_set_verts[..., None]).squeeze(-1) + translations)
 
         handle_idx = torch.stack([
             torch.arange(0, handles.shape[0], device=self.device, dtype=torch.long),
@@ -130,8 +130,7 @@ class DeformTrainer(Trainer):
         static_idx = handle_idx[self.handles_moving.shape[0]:, :]
         loss_dict = self.loss(level_set_verts.detach(), 
                               triangles, rotations, translations,
-                              moving_idx, static_idx, 
-                              handle_values, 2)  # self.step % 2)
+                              moving_idx, static_idx, handle_values)
         return loss_dict
     
     def postprocess(self):

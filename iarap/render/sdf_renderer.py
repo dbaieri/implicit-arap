@@ -65,19 +65,19 @@ class SDFRenderer:
         except:
             verts = np.empty([0, 3], dtype=np.float32)
             faces = np.empty([0, 3], dtype=np.int32)
-        # if self.deformation_model is not None:
-        #     verts = torch.from_numpy(verts).to(self.config.device, torch.float)
-        #     out_verts = []
-        #     for sample in torch.split(verts, self.config.chunk, dim=0):
-        #         transformed = self.deformation_model.network(sample)[0]  # transform(sample)
-        #         out_verts.append(transformed.cpu().detach().numpy())
-        #     verts = np.concatenate(out_verts, axis=0)
+        if self.deformation_model is not None and self.config.deform_mode == 'explicit':
+            verts = torch.from_numpy(verts).to(self.config.device, torch.float)
+            out_verts = []
+            for sample in torch.split(verts, self.config.chunk, dim=0):
+                transformed = self.deformation_model.deform(sample)  # transform(sample)
+                out_verts.append(transformed.cpu().detach().numpy())
+            verts = np.concatenate(out_verts, axis=0)
         return verts, faces
         
     def sdf_functional(self, query):
         sample = query
-        if self.deformation_model is not None:
-            sample = self.deformation_model.transform(sample)  
+        if self.deformation_model is not None and self.config.deform_mode == 'implicit':
+            sample = self.deformation_model.inverse(sample)  
         model_out = self.shape_model(sample)
         return model_out['dist']
     
@@ -253,6 +253,7 @@ class SDFRendererConfig(InstantiateConfig):
     _target: Type = field(default_factory=lambda: SDFRenderer)
     load_shape: Path = Path('./assets/weights/armadillo.pt')
     load_deformation: Path = None
+    deform_mode: Literal['implicit', 'explicit'] = 'explicit'
     min_coord: float = -1.0
     max_coord: float =  1.0
     resolution: int = 512

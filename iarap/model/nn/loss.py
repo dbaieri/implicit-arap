@@ -116,40 +116,19 @@ class DeformationLoss(nn.Module):
                 translations: Float[Tensor, "p n 3"],
                 moving_idx: Int[Tensor, "h_1 2"],
                 static_idx: Int[Tensor, "h_2 2"],
-                handle_value: Float[Tensor, "h 3"],
-                alternation: Literal[0, 1]
+                handle_value: Float[Tensor, "h 3"]
                 ) -> Float[Tensor, "1"]:
-        patch_arap_loss = self.arap_loss(patch_verts, faces, rotations, translations, alternation)
+        patch_arap_loss = self.arap_loss(patch_verts, faces, rotations, translations)
         transformed_verts = (rotations @ patch_verts[..., None]).squeeze(-1) + translations
         moving_pos = transformed_verts[moving_idx[:, 0], moving_idx[:, 1], :]
         static_pos = transformed_verts[static_idx[:, 0], static_idx[:, 1], :]
         moving_handle_loss = self.handle_loss(moving_pos, handle_value[moving_idx[:, 0], :])
         static_handle_loss = self.handle_loss(static_pos, handle_value[static_idx[:, 0], :])
-        '''
-        handle_idx = torch.cat([moving_idx, static_idx], dim=0)
-        handles = patch_verts[handle_idx[:, 0], handle_idx[:, 1], :].view(-1, 3)
-        handle_trans = handle_value - handles
-        d = torch.cdist(patch_verts.view(-1, 3), handles)
-        w = 1. / (d + 1e-8)
-        weight_mask = (d > 0.0).all(dim=-1)
-        weighted_trans = (w[weight_mask, :] @ handle_trans) / w[weight_mask, :].sum(dim=-1, keepdim=True)
-        zero_idx = (d == 0).nonzero()
-        idw_interp = torch.zeros_like(patch_verts).view(-1, 3)
-        idw_interp[zero_idx[:, 0], :] = handle_trans[zero_idx[:, 1], :]
-        idw_interp[weight_mask, :] = weighted_trans
-        interp_verts = patch_verts.view(-1, 3) + idw_interp
-
-        handle_loss = ((transformed_verts.view(-1, 3) - interp_verts) ** 2).sum(dim=-1).mean()
-        translation_loss = (translations ** 2).sum(dim=-1).mean()
-        '''
 
         return {
             'arap_loss': patch_arap_loss * self.config.arap_loss_w,
             'moving_handle_loss': moving_handle_loss * self.config.moving_handle_loss_w,
             'static_handle_loss': static_handle_loss * self.config.static_handle_loss_w,
-            # 'translation_loss': translation_loss
-            # 'handle_loss': handle_loss * self.config.moving_handle_loss_w,
-            # 'translation_loss': translation_loss * self.config.static_handle_loss_w
         }
 
 
@@ -193,8 +172,7 @@ class PatchARAPLoss(nn.Module):
                 patch_verts: Float[Tensor, "p n 3"],
                 faces: Int[Tensor, "m 3"],
                 rotations: Float[Tensor, "p n 3 3"],
-                translations: Float[Tensor, "p n 3"],
-                alternation: Literal[0, 1]
+                translations: Float[Tensor, "p n 3"]
                 ) -> Float[Tensor, "1"]:
         w = self.get_cot_weights(patch_verts, faces)
         idx = torch.cat([faces[:, :2], faces[:, 1:], faces[:, ::2]], dim=0).T
@@ -205,10 +183,5 @@ class PatchARAPLoss(nn.Module):
 
         edges_source = patch_verts[:, idx[0, :], :] - patch_verts[:, idx[1, :], :]
         rot_edges = (rotations[:, idx[0, :], ...] @ edges_source[..., None]).squeeze(-1)  # + translations[:, idx[0, :], :]
-
-        if alternation == 0:
-            rot_edges = rot_edges.detach()
-        elif alternation == 1:
-            rot_verts_edges = rot_verts_edges.detach()
 
         return (w_per_edge * (rot_edges - rot_verts_edges).pow(2).sum(dim=-1)).sum(dim=-1).mean(dim=0)

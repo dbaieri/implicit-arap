@@ -38,7 +38,13 @@ def split_coords(xyz, form, mode, inverse=False):
             x_other = xyz[..., [0, 1]]
     return (x_focus, x_other) if not inverse else (x_other, x_focus)
 
-def combine_coords(x_other, x_focus, form, mode):
+def combine_coords(x_other, x_focus, other, focus):
+    coords = [None] * 3
+    coords[focus[0]] = x_focus
+    coords[other[0]] = x_other[..., [0]]
+    coords[other[1]] = x_other[..., [1]]
+    return torch.cat(coords, dim=-1)
+    '''
     if form == 0:
         if mode == 0:
             x = torch.cat([x_other, x_focus], dim=-1)
@@ -54,6 +60,7 @@ def combine_coords(x_other, x_focus, form, mode):
         else:
             x = torch.cat([x_other, x_focus], dim=-1)
     return x
+    '''
 
 def euler2rot_2dinv(euler_angle):
     # (B1, ..., Bn, 1) -> (B1, ..., Bn, 2, 2)
@@ -74,7 +81,6 @@ def euler2rot_2d(euler_angle):
     ), -1)
 
     return rot
-
 
 class InvertibleMLP3D(nn.Module):
 
@@ -121,7 +127,7 @@ class InvertibleMLP3D(nn.Module):
         self.encoding_z = FourierFeatsEncoding(1, self.freqs, True)
 
         in_channels = self.encoding_z.get_out_dim()
-        self.dims_z = [in_channels] + [self.width] + [3]
+        self.dims_z = [in_channels] + [self.width for _ in range(self.layers)] + [3]
         
         self.blocks_z = nn.ModuleList()
         num_layers = len(self.dims_z)
@@ -153,8 +159,8 @@ class InvertibleMLP3D(nn.Module):
                     torch.nn.init.constant_(lin.bias, 0.0)
                     torch.nn.init.normal_(lin.weight, 0.0, np.sqrt(2) / np.sqrt(lin.out_features))
                 deform.layers[j] = nn.utils.parametrizations.weight_norm(lin)
-            # torch.nn.init.zeros_(deform_out.weight)
-            # torch.nn.init.zeros_(deform_out.bias)
+            torch.nn.init.zeros_(deform_out.weight)
+            torch.nn.init.zeros_(deform_out.bias)
 
         for i in range(self.blocks):
             block_init(self.blocks_xy[i], self.dims_xy, 2, self.skips)
@@ -178,11 +184,11 @@ class InvertibleMLP3D(nn.Module):
             focus_rt = self.blocks_z[i_b](self.encoding_z(x_focus))
 
             rot_2d = euler2rot_2dinv(focus_rt[..., [0]])
-            if i_b % 2 == 1:
+            if focus == [1]:
                 rot_2d = rot_2d.transpose(-1, -2)
             trans_2d = focus_rt[..., 1:]
             x_other = (rot_2d @ (x_other - trans_2d)[..., None]).squeeze(-1)
-            x = combine_coords(x_other, x_focus, form, mode)
+            x = combine_coords(x_other, x_focus, other, focus)
 
             # aggregate rototranslation on "other" coordinates
             t_i = torch.diag_embed(ones)
@@ -211,7 +217,7 @@ class InvertibleMLP3D(nn.Module):
             focus_rt = self.blocks_z[i_b](self.encoding_z(x_other))
 
             rot_2d = euler2rot_2d(focus_rt[..., [0]])
-            if i_b % 2 == 1:
+            if other == [1]:
                 rot_2d = rot_2d.transpose(-1, -2)
             trans_2d = focus_rt[..., 1:]
             x_focus = (rot_2d @ x_focus[..., None]).squeeze(-1) + trans_2d
@@ -220,10 +226,10 @@ class InvertibleMLP3D(nn.Module):
             x_diff = self.blocks_xy[i_b](self.encoding_xy(x_focus))
 
             x_other = x_other + x_diff
-            x = combine_coords(x_focus, x_other, form, mode)
+            x = combine_coords(x_focus, x_other, focus, other)
 
         return x
-    
+
 
 def fixed_point_invert(g, y, iters=15, verbose=False, op='rotation'):
     with torch.no_grad():
@@ -341,7 +347,7 @@ class InvertibleBlock(nn.Module):
 
         return y
     
-    def invert(self, y, verbose=False, iters=15):
+    def inverse(self, y, verbose=False, iters=15):
         return fixed_point_invert(
             lambda x: self.forward_g(x), y, iters=iters, verbose=verbose, op=self.op
         )
@@ -358,6 +364,8 @@ class InvertibleRotBlock(InvertibleBlock):
         super(InvertibleRotBlock, self).__init__(
             in_dim, hidden_dim, in_dim, num_blocks, activation, num_freqs)
         self.op = 'rotation'
+        # No spectral norm on last layer since it predicts euler angles
+        self.blocks[-1] = nn.Linear(hidden_dim, in_dim)  
 
     def forward(self, x):
         euler = self.forward_g(x)
@@ -385,7 +393,6 @@ class InvertibleResidualBlock(InvertibleBlock):
 class InvertibleRtMLP(nn.Module):
 
     def __init__(self, 
-                 num_blocks,
                  in_dim,
                  out_dim,
                  hidden_dim,
@@ -396,18 +403,16 @@ class InvertibleRtMLP(nn.Module):
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.hidden_dim = hidden_dim
-        self.num_blocks = num_blocks
         self.num_g_blocks = num_g_blocks
         self.num_freqs = num_freqs
 
         # Network modules
         self.blocks = nn.ModuleList()
-        for _ in range(self.num_blocks):
-            self.blocks.append(InvertibleRotBlock(self.in_dim, 
-                                                       self.hidden_dim,
-                                                       num_blocks=self.num_g_blocks, 
-                                                       activation=activation,
-                                                       num_freqs=self.num_freqs))
+        self.blocks.append(InvertibleRotBlock(self.in_dim, 
+                                              self.hidden_dim,
+                                              num_blocks=self.num_g_blocks, 
+                                              activation=activation,
+                                              num_freqs=self.num_freqs))
         self.blocks.append(InvertibleResidualBlock(self.in_dim, 
                                                     self.hidden_dim,
                                                     num_blocks=self.num_g_blocks, 
@@ -415,23 +420,16 @@ class InvertibleRtMLP(nn.Module):
                                                     num_freqs=self.num_freqs))
 
     def forward(self, x):
-        """
-        :param x: (bs, npoints, self.dim) Input coordinate (xyz)
-        :return: (bs, npoints, self.dim) Gradient (self.dim dimension)
-        """
         out = x
-        rot = torch.diag_embed(torch.ones_like(x))
-        for block in self.blocks[:-1]:
-            out, euler = block(out)  # euler
-            rot = euler_to_rotation(euler) @ rot
+        out, euler = self.blocks[0](out)  
         out, transl = self.blocks[-1](out)
         
         rot = euler_to_rotation(euler)
-        out = (rot @ x[..., None]).squeeze(-1) + transl
-        return out, rot, transl
+        out_rt = (rot @ x[..., None]).squeeze(-1) + transl
+        return out_rt, rot, transl
 
-    def invert(self, y, verbose=False, iters=15):
+    def inverse(self, y, verbose=False, iters=15):
         x = y
         for block in self.blocks[::-1]:
-            x = block.invert(x, verbose=verbose, iters=iters)
+            x = block.inverse(x, verbose=verbose, iters=iters)
         return x
