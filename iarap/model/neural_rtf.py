@@ -78,7 +78,7 @@ class NeuralRTF(SDF):
         self.sdf_callable = dist_fn
 
     def distance(self, x_in: Float[Tensor, "*batch in_dim"]) -> Float[Tensor, "*batch 1"]:
-        x = self.transform(x_in)
+        x = self.inverse(x_in)
         return self.sdf_callable(x)
     
     def geometric_init(self):

@@ -1,0 +1,10 @@
+handles:
+  moving:
+    positions:
+      - head
+      - tail
+      - feet_back
+    transform:
+      - head_down
+      - tail_down_side
+      - feet_back_rotate

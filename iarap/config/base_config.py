@@ -24,6 +24,10 @@ class PrintableConfig:
         for key, val in vars(self).items():
             if key.startswith('_'): 
                 continue
+            if isinstance(val, PrintableConfig):
+                out[key] = val.to_dict()
+            else:
+                out[key] = val
         return out
 
 

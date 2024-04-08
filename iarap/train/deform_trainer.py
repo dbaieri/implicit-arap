@@ -45,13 +45,22 @@ class DeformTrainer(Trainer):
         # Configure handles
         handle_cfg = yaml.load(open(self.config.handles_spec, 'r'), yaml.Loader)
         handle_dir = self.config.handles_spec.parent
-        static = [np.loadtxt(handle_dir / "parts" / f"{f}.txt") for f in handle_cfg['handles']['static']['positions']]
-        moving = [np.loadtxt(handle_dir / "parts" / f"{f}.txt") for f in handle_cfg['handles']['moving']['positions']]
-        transforms = [np.loadtxt(handle_dir / "transforms" / f"{f}.txt") for f in  handle_cfg['handles']['moving']['transform']]
-        self.handles_static = torch.from_numpy(np.concatenate(static, axis=0)).to(self.config.device, torch.float)
-        moving_pos = torch.from_numpy(np.concatenate(moving, axis=0)).to(self.config.device, torch.float)
-        moving_trans = torch.from_numpy(np.concatenate(transforms, axis=0)).to(self.config.device, torch.float)
-        self.handles_moving = torch.cat([moving_pos, moving_trans], dim=-1)
+        assert 'handles' in handle_cfg.keys(), f"Handle specification not found in file {self.config.handles_spec}"
+        if 'static' in handle_cfg['handles'].keys() and len(handle_cfg['handles']['static']['positions']) > 0:
+            static = [np.loadtxt(handle_dir / "parts" / f"{f}.txt") for f in handle_cfg['handles']['static']['positions']]
+            self.handles_static = torch.from_numpy(np.concatenate(static, axis=0)).to(self.config.device, torch.float)
+        else:
+            self.handles_static = torch.empty((0, 3), device=self.config.device, dtype=torch.float)
+        if 'moving' in handle_cfg['handles'].keys() and len(handle_cfg['handles']['moving']['positions']) > 0:
+            assert len(handle_cfg['handles']['moving']['positions']) == len(handle_cfg['handles']['moving']['transform']),\
+                "It is required to specify one transform for each handle set"
+            moving = [np.loadtxt(handle_dir / "parts" / f"{f}.txt") for f in handle_cfg['handles']['moving']['positions']]
+            transforms = [np.loadtxt(handle_dir / "transforms" / f"{f}.txt") for f in  handle_cfg['handles']['moving']['transform']]
+            moving_pos = torch.from_numpy(np.concatenate(moving, axis=0)).to(self.config.device, torch.float)
+            moving_trans = torch.from_numpy(np.concatenate(transforms, axis=0)).to(self.config.device, torch.float)
+            self.handles_moving = torch.cat([moving_pos, moving_trans], dim=-1)
+        else:
+            self.handles_moving = torch.empty((0, 6), device=self.config.device, dtype=torch.float)
 
     def setup_model(self):
         self.source: NeuralSDF = self.config.shape_model.setup().to(self.config.device).eval()

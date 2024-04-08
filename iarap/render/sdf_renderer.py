@@ -40,7 +40,7 @@ class SDFRenderer:
             self.deformation_model = None
         vol = self.make_volume()
         self.cached_sdf = self.evaluate_model(vol).numpy()
-        if self.config.visualize_deform_sample > 0:
+        if self.config.visualize_deform_sample > 0 and self.deformation_model is not None:
             pts = torch.rand(self.config.visualize_deform_sample, 3, device=self.config.device) * 2 - 1
             deform = self.deformation_model.deform(pts) - pts
             self.vis_deform = np.concatenate([pts.cpu().detach().numpy(), deform.cpu().detach().numpy()], axis=-1)
@@ -245,7 +245,7 @@ class SDFRenderer:
 
         ps.init()
         ps.register_surface_mesh("NeuralSDF", verts, faces, enabled=True)
-        if self.config.visualize_deform_sample > 0:
+        if self.config.visualize_deform_sample > 0 and self.deformation_model is not None:
             deform_pc = ps.register_point_cloud("DeformPts", self.vis_deform[..., :3], radius=0.001)
             deform_pc.add_vector_quantity("DeformVecs", self.vis_deform[..., 3:], enabled=True)
         ps.set_user_callback(custom_callback)

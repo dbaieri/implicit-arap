@@ -2,8 +2,9 @@ handles:
   static:
     positions:
       - feet_back
+      - feet_front
   moving:
     positions:
       - head
     transform:
-      - head_up_fwd
+      - head_down_front

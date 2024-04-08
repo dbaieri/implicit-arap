@@ -1,0 +1,12 @@
+handles:
+  static:
+    positions:
+      - left_foot
+      - right_foot
+  moving:
+    positions:
+      - right_hand
+      - left_hand
+    transform:
+      - right_hand_front_2
+      - left_hand_front_2
