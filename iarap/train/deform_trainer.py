@@ -24,6 +24,7 @@ from iarap.model.arap import ARAPMesh
 from iarap.train.optim import AdamConfig, MultiStepSchedulerConfig
 from iarap.train.trainer import Trainer
 from iarap.utils import delaunay, detach_model
+from iarap.utils.meshing import get_patch_mesh, sphere_random_uniform, sphere_sunflower
 
 
 DEBUG = False
@@ -48,7 +49,10 @@ class DeformTrainer(Trainer):
         assert 'handles' in handle_cfg.keys(), f"Handle specification not found in file {self.config.handles_spec}"
         if 'static' in handle_cfg['handles'].keys() and len(handle_cfg['handles']['static']['positions']) > 0:
             static = [np.loadtxt(handle_dir / "parts" / f"{f}.txt") for f in handle_cfg['handles']['static']['positions']]
-            self.handles_static = torch.from_numpy(np.concatenate(static, axis=0)).to(self.config.device, torch.float)
+            static = np.concatenate(static, axis=0)
+            if len(static.shape) < 2:
+                static = np.expand_dims(static, 0)
+            self.handles_static = torch.from_numpy(static).to(self.config.device, torch.float)
         else:
             self.handles_static = torch.empty((0, 3), device=self.config.device, dtype=torch.float)
         if 'moving' in handle_cfg['handles'].keys() and len(handle_cfg['handles']['moving']['positions']) > 0:
@@ -56,8 +60,13 @@ class DeformTrainer(Trainer):
                 "It is required to specify one transform for each handle set"
             moving = [np.loadtxt(handle_dir / "parts" / f"{f}.txt") for f in handle_cfg['handles']['moving']['positions']]
             transforms = [np.loadtxt(handle_dir / "transforms" / f"{f}.txt") for f in  handle_cfg['handles']['moving']['transform']]
-            moving_pos = torch.from_numpy(np.concatenate(moving, axis=0)).to(self.config.device, torch.float)
-            moving_trans = torch.from_numpy(np.concatenate(transforms, axis=0)).to(self.config.device, torch.float)
+            moving = np.concatenate(moving, axis=0)
+            transforms = np.concatenate(transforms, axis=0)
+            if len(moving.shape) < 2:
+                moving = np.expand_dims(moving, axis=0)
+                transforms = np.expand_dims(transforms, axis=0)
+            moving_pos = torch.from_numpy(moving).to(self.config.device, torch.float)
+            moving_trans = torch.from_numpy(transforms).to(self.config.device, torch.float)
             self.handles_moving = torch.cat([moving_pos, moving_trans], dim=-1)
         else:
             self.handles_moving = torch.empty((0, 6), device=self.config.device, dtype=torch.float)
@@ -95,16 +104,22 @@ class DeformTrainer(Trainer):
         sdf_outs = self.source(samples, with_grad=True)
         sample_dist, patch_normals = sdf_outs['dist'], F.normalize(sdf_outs['grad'], dim=-1)
         tangent_planes = self.source.tangent_plane(samples)
-
-        rho = np.sqrt(np.random.uniform(0, self.config.plane_coords_scale, size=(self.config.delaunay_sample-1, 1)))
+        '''
+        rho = np.sqrt(np.random.uniform(0, self.config.plane_coords_scale, size=(self.config.delaunay_sample-1, 1))) # )
         theta = np.random.uniform(0, 2 * np.pi, size=(self.config.delaunay_sample-1, 1))
         plane_coords = np.concatenate([rho * np.cos(theta), rho * np.sin(theta)], axis=-1)
         plane_coords = np.concatenate([np.zeros((1, 2)), plane_coords], axis=0)
         # plane_coords = np.random.uniform(-1, 1, size=(self.config.delaunay_sample, 2)) * self.config.plane_coords_scale
         triangles = delaunay(pts_np=plane_coords, out_device=self.device)
-
         plane_coords = torch.cat([torch.from_numpy(plane_coords).to(self.device, torch.float),
                                   torch.zeros(*plane_coords.shape[:-1], 1, device=self.device)], dim=-1)
+        '''
+        plane_coords, triangles = get_patch_mesh(sphere_random_uniform, 
+                                                 delaunay,
+                                                 self.config.delaunay_sample,
+                                                 self.config.plane_coords_scale,
+                                                 self.device)
+
         tangent_coords = (tangent_planes.unsqueeze(1) @ plane_coords.view(1, -1, 3, 1)).squeeze() 
         tangent_pts = tangent_coords + samples.unsqueeze(1) 
         level_set_verts = tangent_pts

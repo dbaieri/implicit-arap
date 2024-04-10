@@ -5,6 +5,6 @@ handles:
       - tail
       - feet_back
     transform:
-      - head_down
+      - head_down_side
       - tail_down_side
       - feet_back_rotate
