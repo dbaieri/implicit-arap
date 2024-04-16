@@ -104,16 +104,7 @@ class DeformTrainer(Trainer):
         sdf_outs = self.source(samples, with_grad=True)
         sample_dist, patch_normals = sdf_outs['dist'], F.normalize(sdf_outs['grad'], dim=-1)
         tangent_planes = self.source.tangent_plane(samples)
-        '''
-        rho = np.sqrt(np.random.uniform(0, self.config.plane_coords_scale, size=(self.config.delaunay_sample-1, 1))) # )
-        theta = np.random.uniform(0, 2 * np.pi, size=(self.config.delaunay_sample-1, 1))
-        plane_coords = np.concatenate([rho * np.cos(theta), rho * np.sin(theta)], axis=-1)
-        plane_coords = np.concatenate([np.zeros((1, 2)), plane_coords], axis=0)
-        # plane_coords = np.random.uniform(-1, 1, size=(self.config.delaunay_sample, 2)) * self.config.plane_coords_scale
-        triangles = delaunay(pts_np=plane_coords, out_device=self.device)
-        plane_coords = torch.cat([torch.from_numpy(plane_coords).to(self.device, torch.float),
-                                  torch.zeros(*plane_coords.shape[:-1], 1, device=self.device)], dim=-1)
-        '''
+
         plane_coords, triangles = get_patch_mesh(sphere_random_uniform, 
                                                  delaunay,
                                                  self.config.delaunay_sample,
@@ -124,8 +115,6 @@ class DeformTrainer(Trainer):
         tangent_pts = tangent_coords + samples.unsqueeze(1) 
         level_set_verts = tangent_pts
         for it in range(self.config.num_projections):
-            # surface_verts = self.source.sphere_trace(surface_verts, patch_normals.unsqueeze(-2))  # n m 3
-            # surface_verts = self.source.project_nearest(surface_verts)  # n m 3
             level_set_verts = self.source.project_level_sets(level_set_verts, sample_dist)  # n m 3
         
         if DEBUG:

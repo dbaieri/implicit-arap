@@ -1,5 +1,6 @@
 import torch
 
+import numpy as np
 import torch.nn as nn
 
 from torch import Tensor
@@ -61,3 +62,50 @@ class FourierFeatsEncoding(nn.Module):
         if self.include_input:
             encoded_inputs = torch.cat([in_tensor, encoded_inputs], dim=-1)
         return encoded_inputs
+
+
+
+class LipBoundedPosEnc(nn.Module):
+
+    def __init__(self, inp_features, n_freq, cat_inp=True):
+        super(LipBoundedPosEnc, self).__init__()
+        self.inp_feat = inp_features
+        self.n_freq = n_freq
+        self.cat_inp = cat_inp
+        self.out_dim = 2 * self.n_freq * self.inp_feat
+        if self.cat_inp:
+            self.out_dim += self.inp_feat
+
+    def forward(self, x):
+        """
+        :param x: (bs, npoints, inp_features)
+        :return: (bs, npoints, 2 * out_features + inp_features)
+        """
+        assert len(x.size()) == 3
+        bs, npts = x.size(0), x.size(1)
+        const = (2 ** torch.arange(self.n_freq) * np.pi).view(1, 1, 1, -1)
+        const = const.to(x)
+
+        # Out shape : (bs, npoints, out_feat)
+        cos_feat = torch.cos(const * x.unsqueeze(-1)).view(
+            bs, npts, self.inp_feat, -1)
+        sin_feat = torch.sin(const * x.unsqueeze(-1)).view(
+            bs, npts, self.inp_feat, -1)
+        out = torch.cat(
+            [sin_feat, cos_feat], dim=-1).view(
+            bs, npts, 2 * self.inp_feat * self.n_freq)
+        const_norm = torch.cat(
+            [const, const], dim=-1).view(
+            1, 1, 1, self.n_freq * 2).expand(
+            -1, -1, self.inp_feat, -1).reshape(
+            1, 1, 2 * self.inp_feat * self.n_freq)
+
+        if self.cat_inp:
+            out = torch.cat([out, x], dim=-1)
+            const_norm = torch.cat(
+                [const_norm, torch.ones(1, 1, self.inp_feat).to(x)], dim=-1)
+
+            return out / const_norm / np.sqrt(self.n_freq * 2 + 1)
+        else:
+
+            return out / const_norm / np.sqrt(self.n_freq * 2)

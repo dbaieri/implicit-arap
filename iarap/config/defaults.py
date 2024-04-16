@@ -65,7 +65,7 @@ render_sdf_entrypoint = SDFRendererConfig(
     # load_deformation=Path('wandb/run-20240304_160841-bh9r4jzt/files/checkpoints/neural_rotation.pt'),
     # load_deformation=Path('wandb/run-20240314_103509-58hdqszn/files/checkpoints/neural_rotation.pt'),
     # load_deformation=Path('wandb/buddha_bust_rotate_L/files/checkpoints/neural_rotation.pt'),
-    load_deformation=Path('wandb/offline-run-20240409_164221-e7jbd9y2/files/checkpoints/neural_rotation.pt'),
+    load_deformation=Path('wandb/offline-run-20240416_112405-1tk93r38/files/checkpoints/neural_rotation.pt'),
     chunk=300000,
     resolution=512
 )

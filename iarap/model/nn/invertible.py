@@ -1,9 +1,17 @@
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
 import numpy as np
 
-from iarap.model.nn import FourierFeatsEncoding, MLP
-from iarap.utils.linalg import align_vectors, euler_to_rotation
+from dataclasses import dataclass, field
+from typing import Any, Dict, Type, Tuple
+
+from iarap.config.base_config import InstantiateConfig
+from iarap.model.nn.encoding import FourierFeatsEncoding, LipBoundedPosEnc
+from iarap.model.nn.mlp import MLP
+from iarap.utils.linalg import euler_to_rotation
+from iarap.utils.misc import to_immutable_dict
 
 
 
@@ -13,54 +21,12 @@ def coordinate_split(form, mode, inverse=False):
     focus = list(focus)
     return (focus, other) if not inverse else (other, focus)
 
-def split_coords(xyz, form, mode, inverse=False):
-    if form == 0:
-        # zyx
-        if mode == 0:
-            x_focus = xyz[..., [2]]
-            x_other = xyz[..., [0, 1]]
-        elif mode == 1:
-            x_focus = xyz[..., [1]]
-            x_other = xyz[..., [0, 2]]
-        else:
-            x_focus = xyz[..., [0]]
-            x_other = xyz[..., [1, 2]]
-    else:
-        # xyz
-        if mode == 0:
-            x_focus = xyz[..., [0]]
-            x_other = xyz[..., [1, 2]]
-        elif mode == 1:
-            x_focus = xyz[..., [1]]
-            x_other = xyz[..., [0, 2]]
-        else:
-            x_focus = xyz[..., [2]]
-            x_other = xyz[..., [0, 1]]
-    return (x_focus, x_other) if not inverse else (x_other, x_focus)
-
 def combine_coords(x_other, x_focus, other, focus):
     coords = [None] * 3
     coords[focus[0]] = x_focus
     coords[other[0]] = x_other[..., [0]]
     coords[other[1]] = x_other[..., [1]]
     return torch.cat(coords, dim=-1)
-    '''
-    if form == 0:
-        if mode == 0:
-            x = torch.cat([x_other, x_focus], dim=-1)
-        elif mode == 1:
-            x = torch.cat([x_other[..., [0]], x_focus, x_other[..., [1]]], dim=-1)
-        else:
-            x = torch.cat([x_focus, x_other], dim=-1)
-    else:
-        if mode == 0:
-            x = torch.cat([x_focus, x_other], dim=-1)
-        elif mode == 1:
-            x = torch.cat([x_other[..., [0]], x_focus, x_other[..., [1]]], dim=-1)
-        else:
-            x = torch.cat([x_other, x_focus], dim=-1)
-    return x
-    '''
 
 def euler2rot_2dinv(euler_angle):
     # (B1, ..., Bn, 1) -> (B1, ..., Bn, 2, 2)
@@ -82,26 +48,24 @@ def euler2rot_2d(euler_angle):
 
     return rot
 
+
 class InvertibleMLP3D(nn.Module):
 
     def __init__(self,
-                 blocks=1,
-                 width=128,
-                 layers=2, 
-                 skips=[],
-                 freqs=6,
-                 activation=nn.Softplus(beta=100)):
+                 config: InvertibleMLP3DConfig):
         super(InvertibleMLP3D, self).__init__()
 
-        self.blocks = blocks * 3  # At least one block per coordinate
-        self.skips = skips
-        self.freqs = freqs
-        self.width = width
-        self.layers = layers
-        self.activation = activation
+        self.blocks = config.num_blocks * 3  # At least one block per coordinate
+        self.skips = config.skip_connections
+        self.freqs = config.num_frequencies
+        self.width = config.layer_width
+        self.layers = config.num_layers
+        self.activation = config.activation
+        self.act_defaults = config.act_defaults
 
         self.make_deform_net()
-        self.initialize()
+        if config.geometric_init:
+            self.geometric_init()
 
     def make_deform_net(self):
         # part a : xy -> z
@@ -118,7 +82,9 @@ class InvertibleMLP3D(nn.Module):
                 layer_width=self.width,
                 skip_connections=self.skips,
                 activation=self.activation,
-                out_activation=self.activation,
+                act_defaults=self.act_defaults,
+                out_activation=True,
+                geometric_init=False
             )
             deform_out = nn.Linear(self.width, self.dims_xy[-1]) 
             self.blocks_xy.append(nn.Sequential(deform, deform_out))
@@ -138,12 +104,14 @@ class InvertibleMLP3D(nn.Module):
                 layer_width=self.width,
                 skip_connections=self.skips,
                 activation=self.activation,
-                out_activation=self.activation,
+                act_defaults=self.act_defaults,
+                out_activation=True,
+                geometric_init=False
             )
             deform_out = nn.Linear(self.width, self.dims_z[-1]) 
             self.blocks_z.append(nn.Sequential(deform, deform_out))
 
-    def initialize(self):
+    def geometric_init(self):
         def block_init(block, dims, in_dim, skips):
             deform, deform_out = block[0], block[1]
             for j, lin in enumerate(deform.layers):
@@ -231,6 +199,7 @@ class InvertibleMLP3D(nn.Module):
         return x
 
 
+
 def fixed_point_invert(g, y, iters=15, verbose=False, op='rotation'):
     with torch.no_grad():
         x = y
@@ -254,52 +223,6 @@ def fixed_point_invert(g, y, iters=15, verbose=False, op='rotation'):
                 err = err.detach().cpu().item()
                 print("iter:%d err:%s" % (i, err))
     return x
-
-
-class LipBoundedPosEnc(nn.Module):
-
-    def __init__(self, inp_features, n_freq, cat_inp=True):
-        super().__init__()
-        self.inp_feat = inp_features
-        self.n_freq = n_freq
-        self.cat_inp = cat_inp
-        self.out_dim = 2 * self.n_freq * self.inp_feat
-        if self.cat_inp:
-            self.out_dim += self.inp_feat
-
-    def forward(self, x):
-        """
-        :param x: (bs, npoints, inp_features)
-        :return: (bs, npoints, 2 * out_features + inp_features)
-        """
-        assert len(x.size()) == 3
-        bs, npts = x.size(0), x.size(1)
-        const = (2 ** torch.arange(self.n_freq) * np.pi).view(1, 1, 1, -1)
-        const = const.to(x)
-
-        # Out shape : (bs, npoints, out_feat)
-        cos_feat = torch.cos(const * x.unsqueeze(-1)).view(
-            bs, npts, self.inp_feat, -1)
-        sin_feat = torch.sin(const * x.unsqueeze(-1)).view(
-            bs, npts, self.inp_feat, -1)
-        out = torch.cat(
-            [sin_feat, cos_feat], dim=-1).view(
-            bs, npts, 2 * self.inp_feat * self.n_freq)
-        const_norm = torch.cat(
-            [const, const], dim=-1).view(
-            1, 1, 1, self.n_freq * 2).expand(
-            -1, -1, self.inp_feat, -1).reshape(
-            1, 1, 2 * self.inp_feat * self.n_freq)
-
-        if self.cat_inp:
-            out = torch.cat([out, x], dim=-1)
-            const_norm = torch.cat(
-                [const_norm, torch.ones(1, 1, self.inp_feat).to(x)], dim=-1)
-
-            return out / const_norm / np.sqrt(self.n_freq * 2 + 1)
-        else:
-
-            return out / const_norm / np.sqrt(self.n_freq * 2)
 
 
 class InvertibleBlock(nn.Module):
@@ -393,31 +316,26 @@ class InvertibleResidualBlock(InvertibleBlock):
 class InvertibleRtMLP(nn.Module):
 
     def __init__(self, 
-                 in_dim,
-                 out_dim,
-                 hidden_dim,
-                 num_freqs,
-                 num_g_blocks=1,
-                 activation=nn.Softplus(beta=100)):
+                 config: InvertibleRtMLPConfig,):
         super(InvertibleRtMLP, self).__init__()
-        self.in_dim = in_dim
-        self.out_dim = out_dim
-        self.hidden_dim = hidden_dim
-        self.num_g_blocks = num_g_blocks
-        self.num_freqs = num_freqs
+        self.in_dim = config.in_dim
+        self.hidden_dim = config.layer_width
+        self.num_g_blocks = config.num_g_blocks
+        self.num_freqs = config.num_frequencies
+        self.activation = getattr(nn, config.activation)(**config.act_defaults)
 
         # Network modules
         self.blocks = nn.ModuleList()
         self.blocks.append(InvertibleRotBlock(self.in_dim, 
                                               self.hidden_dim,
                                               num_blocks=self.num_g_blocks, 
-                                              activation=activation,
+                                              activation=self.activation,
                                               num_freqs=self.num_freqs))
         self.blocks.append(InvertibleResidualBlock(self.in_dim, 
-                                                    self.hidden_dim,
-                                                    num_blocks=self.num_g_blocks, 
-                                                    activation=activation,
-                                                    num_freqs=self.num_freqs))
+                                                   self.hidden_dim,
+                                                   num_blocks=self.num_g_blocks, 
+                                                   activation=self.activation,
+                                                   num_freqs=self.num_freqs))
 
     def forward(self, x):
         out = x
@@ -433,3 +351,31 @@ class InvertibleRtMLP(nn.Module):
         for block in self.blocks[::-1]:
             x = block.inverse(x, verbose=verbose, iters=iters)
         return x
+    
+
+@dataclass
+class InvertibleMLP3DConfig(InstantiateConfig):
+
+    _target: Type = field(default_factory=lambda: InvertibleMLP3D)
+
+    num_blocks: int = 1
+    layer_width: int = 128
+    num_layers: int = 2
+    skip_connections: Tuple[int] = (0,)
+    num_frequencies: int = 6
+    geometric_init: bool = True
+    activation: str = 'Softplus'
+    act_defaults: Dict[str, Any] = to_immutable_dict({'beta': 100})
+
+
+@dataclass
+class InvertibleRtMLPConfig(InstantiateConfig):
+
+    _target: Type = field(default_factory=lambda: InvertibleRtMLP)
+
+    in_dim: int = 3
+    layer_width: int = 256
+    num_frequencies: int = 6
+    num_g_blocks: int = 4
+    activation: str = 'Softplus'
+    act_defaults: Dict[str, Any] = to_immutable_dict({'beta': 100})

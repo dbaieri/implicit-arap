@@ -39,6 +39,22 @@ def sphere_sunflower(n: int,
     theta = k * angle_stride
     return torch.cat([r * theta.cos(), r * theta.sin()], dim=-1)
 
+def sphere_gaussian_radius(n: int,
+                           radius: float,
+                           device: Literal['cpu', 'cuda'] = 'cpu') -> Float[Tensor, "n 2"]:
+    rho = torch.randn((n - 1, 1), device=device).abs()
+    rho = rho / (rho.max() / radius)
+    theta = torch.rand((n - 1, 1), device=device) * 2 * torch.pi
+    vert = torch.cat([rho * theta.cos(), rho * theta.sin()], dim=-1)
+    return torch.cat([torch.zeros((1, 2), device=device), vert], dim=0)
+
+def gaussian_max_norm(n: int,
+                      radius: float,
+                      device: Literal['cpu', 'cuda'] = 'cpu') -> Float[Tensor, "n 2"]:
+    pts = torch.randn(n - 1, 2, device=device)
+    vert = pts / (pts.norm(dim=-1).max() / radius)
+    return torch.cat([torch.zeros((1, 2), device=device), vert], dim=0)
+
 
 def get_patch_mesh(point_generator: Callable,
                    point_triangulator: Callable,
