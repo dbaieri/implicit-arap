@@ -72,6 +72,7 @@ class NeuralRTF(SDF):
 
     def forward(self, 
                 x_in: Float[Tensor, "*batch in_dim"],
+                return_euler: bool = False
                 ) -> Dict[str, Float[Tensor, "*batch f"]]:
         outputs = {}
         # _, R, t = self.model(x_in)
@@ -79,6 +80,8 @@ class NeuralRTF(SDF):
         euler, transl = rt[..., :3], rt[..., 3:]
         outputs['rot'] = euler_to_rotation(euler)
         outputs['transl'] = transl  
+        if return_euler:
+            outputs['euler'] = euler
         return outputs
     
     def deform(self, 

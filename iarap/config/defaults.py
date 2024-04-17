@@ -6,6 +6,7 @@ from iarap.data.mesh import MeshDataConfig
 from iarap.model.nn.loss import DeformationLossConfig, IGRConfig
 from iarap.model.neural_rtf import NeuralRTFConfig
 from iarap.model.neural_sdf import NeuralSDFConfig
+from iarap.render.animate import AnimatorConfig
 from iarap.render.sdf_renderer import SDFRendererConfig
 from iarap.train.deform_trainer import DeformTrainerConfig
 from iarap.train.optim import AdamConfig, MultiStepSchedulerConfig
@@ -36,8 +37,8 @@ train_sdf_entrypoint = SDFTrainerConfig(
 
 deform_sdf_entrypoint = DeformTrainerConfig(    
     num_steps=1000,
-    pretrained_shape=Path('./assets/weights/sdf/armadillo.pt'),
-    handles_spec=Path('assets/constraints/armadillo/bust_rotate.yaml'),
+    pretrained_shape=Path('./assets/weights/sdf/cubes.pt'),
+    handles_spec=Path('assets/constraints/cubes/bending.yaml'),
     delaunay_sample=30,
     zero_samples=1000,
     space_samples=1000,
@@ -61,20 +62,30 @@ deform_sdf_entrypoint = DeformTrainerConfig(
 )
 
 render_sdf_entrypoint = SDFRendererConfig(
-    load_shape=Path('assets/weights/sdf/armadillo.pt'),
+    load_shape=Path('assets/weights/sdf/dragon.pt'),
     # load_deformation=Path('wandb/run-20240304_160841-bh9r4jzt/files/checkpoints/neural_rotation.pt'),
     # load_deformation=Path('wandb/run-20240314_103509-58hdqszn/files/checkpoints/neural_rotation.pt'),
     # load_deformation=Path('wandb/buddha_bust_rotate_L/files/checkpoints/neural_rotation.pt'),
-    load_deformation=Path('wandb/offline-run-20240416_112405-1tk93r38/files/checkpoints/neural_rotation.pt'),
+    load_deformation=Path('wandb/run-20240409_150444-a10slgxp/files/checkpoints/neural_rotation.pt'),
     chunk=300000,
     resolution=512
+)
+
+animate_entrypoint = AnimatorConfig(
+    load_shape=Path('assets/weights/sdf/cubes.pt'),
+    load_deformation=Path('wandb/cubes-bending-mlp/files/checkpoints/neural_rotation.pt'),
+    chunk=300000,
+    resolution=512,
+    ffmpeg_path='ffmpeg',
+    camera_origin=(0.0, 0.0, 2.5)
 )
 
 
 Defaults = {
     'train-sdf': train_sdf_entrypoint,
     'deform-sdf': deform_sdf_entrypoint,
-    'render-sdf': render_sdf_entrypoint
+    'render-sdf': render_sdf_entrypoint,
+    'animate': animate_entrypoint
 }
 
 Commands = tyro.conf.SuppressFixed[tyro.conf.FlagConversionOff[
