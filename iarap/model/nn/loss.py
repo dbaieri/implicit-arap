@@ -116,14 +116,15 @@ class DeformationLoss(nn.Module):
                 translations: Float[Tensor, "p n 3"],
                 moving_idx: Int[Tensor, "h_1 2"],
                 static_idx: Int[Tensor, "h_2 2"],
-                handle_value: Float[Tensor, "h 3"]
+                moving_gt: Float[Tensor, "h_1 3"],
+                static_gt: Float[Tensor, "h_2 3"]
                 ) -> Float[Tensor, "1"]:
         patch_arap_loss = self.arap_loss(patch_verts, faces, rotations, translations)
         transformed_verts = (rotations @ patch_verts[..., None]).squeeze(-1) + translations
         moving_pos = transformed_verts[moving_idx[:, 0], moving_idx[:, 1], :]
         static_pos = transformed_verts[static_idx[:, 0], static_idx[:, 1], :]
-        moving_handle_loss = self.handle_loss(moving_pos, handle_value[moving_idx[:, 0], :])
-        static_handle_loss = self.handle_loss(static_pos, handle_value[static_idx[:, 0], :])
+        moving_handle_loss = self.handle_loss(moving_pos, moving_gt)
+        static_handle_loss = self.handle_loss(static_pos, static_gt)
 
         return {
             'arap_loss': patch_arap_loss * self.config.arap_loss_w,

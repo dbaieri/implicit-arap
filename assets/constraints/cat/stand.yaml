@@ -1,0 +1,9 @@
+handles:
+  static:
+    positions:
+      - back_paws
+  moving:
+    positions:
+      - front_paws
+    transform:
+      - front_paws_up

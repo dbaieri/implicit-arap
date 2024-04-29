@@ -75,13 +75,16 @@ class NeuralRTF(SDF):
                 return_euler: bool = False
                 ) -> Dict[str, Float[Tensor, "*batch f"]]:
         outputs = {}
-        # _, R, t = self.model(x_in)
         rt = self.network(x_in)
-        euler, transl = rt[..., :3], rt[..., 3:]
-        outputs['rot'] = euler_to_rotation(euler)
+        if isinstance(rt, torch.Tensor):
+            euler, transl = rt[..., :3], rt[..., 3:]
+            rot = euler_to_rotation(euler)
+            if return_euler:
+                outputs['euler'] = euler
+        else:
+            _, rot, transl = rt
+        outputs['rot'] = rot
         outputs['transl'] = transl  
-        if return_euler:
-            outputs['euler'] = euler
         return outputs
     
     def deform(self, 

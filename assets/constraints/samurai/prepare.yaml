@@ -1,0 +1,10 @@
+handles:
+  static:
+    positions:
+      - base
+      - feet
+  moving:
+    positions:
+      - blade
+    transform:
+      - blade_side

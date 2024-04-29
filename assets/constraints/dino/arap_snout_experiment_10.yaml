@@ -1,0 +1,10 @@
+handles:
+  static:
+    positions:
+      - left_foot
+      - right_foot
+  moving:
+    positions:
+      - snout_points_10
+    transform:
+      - snout_points_10_down

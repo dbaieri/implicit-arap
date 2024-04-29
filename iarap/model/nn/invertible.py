@@ -9,7 +9,7 @@ from typing import Any, Dict, Type, Tuple
 
 from iarap.config.base_config import InstantiateConfig
 from iarap.model.nn.encoding import FourierFeatsEncoding, LipBoundedPosEnc
-from iarap.model.nn.mlp import MLP
+from iarap.model.nn.mlp import MLP, MLPConfig
 from iarap.utils.linalg import euler_to_rotation
 from iarap.utils.misc import to_immutable_dict
 
@@ -76,16 +76,18 @@ class InvertibleMLP3D(nn.Module):
         self.blocks_xy = nn.ModuleList()
         num_layers = len(self.dims_xy)
         for i_b in range(self.blocks):
-            deform = MLP(
+            deform = MLPConfig(
                 in_dim=in_channels,
+                out_dim=None,
                 num_layers=num_layers-1,
                 layer_width=self.width,
                 skip_connections=self.skips,
                 activation=self.activation,
                 act_defaults=self.act_defaults,
                 out_activation=True,
+                num_frequencies=0,
                 geometric_init=False
-            )
+            ).setup()
             deform_out = nn.Linear(self.width, self.dims_xy[-1]) 
             self.blocks_xy.append(nn.Sequential(deform, deform_out))
 
@@ -98,16 +100,18 @@ class InvertibleMLP3D(nn.Module):
         self.blocks_z = nn.ModuleList()
         num_layers = len(self.dims_z)
         for i_b in range(self.blocks):
-            deform = MLP(
+            deform = MLPConfig(
                 in_dim=in_channels,
+                out_dim=None,
                 num_layers=num_layers-1,
                 layer_width=self.width,
                 skip_connections=self.skips,
                 activation=self.activation,
                 act_defaults=self.act_defaults,
                 out_activation=True,
+                num_frequencies=0,
                 geometric_init=False
-            )
+            ).setup()
             deform_out = nn.Linear(self.width, self.dims_z[-1]) 
             self.blocks_z.append(nn.Sequential(deform, deform_out))
 
@@ -358,9 +362,10 @@ class InvertibleMLP3DConfig(InstantiateConfig):
 
     _target: Type = field(default_factory=lambda: InvertibleMLP3D)
 
-    num_blocks: int = 1
-    layer_width: int = 128
-    num_layers: int = 2
+    in_dim: int = 3
+    num_blocks: int = 2
+    layer_width: int = 256
+    num_layers: int = 3
     skip_connections: Tuple[int] = (0,)
     num_frequencies: int = 6
     geometric_init: bool = True

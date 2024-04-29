@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import torch
+import trimesh
 import vedo
 import mcubes
 import pathlib
@@ -29,17 +30,30 @@ class SDFRenderer:
         self.setup_model()
 
     def setup_model(self):
-        self.shape_model = self.config.shape_model.setup().to(self.config.device)
-        self.shape_model.load_state_dict(torch.load(self.config.load_shape))
-        detach_model(self.shape_model)
         if self.config.load_deformation is not None:
             self.deformation_model = self.config.deformation_model.setup().to(self.config.device)
             self.deformation_model.load_state_dict(torch.load(self.config.load_deformation))
             detach_model(self.deformation_model)
         else:
             self.deformation_model = None
-        vol = self.make_volume()
-        self.cached_sdf = self.evaluate_model(vol).numpy()
+        if self.config.shape_type == 'sdf':
+            self.shape_model = self.config.shape_model.setup().to(self.config.device)
+            self.shape_model.load_state_dict(torch.load(self.config.load_shape))
+            detach_model(self.shape_model)
+            vol = self.make_volume()
+            self.cached_sdf = self.evaluate_model(vol).numpy()
+        elif self.config.shape_type == 'mesh':
+            assert self.config.deform_mode == 'explicit', "Implicit deformation does not make sense with mesh input."
+            self.shape = trimesh.load(self.config.load_shape)
+            self.shape.vertices -= np.expand_dims(self.shape.centroid, axis=0)
+            self.shape.vertices /= np.abs(self.shape.vertices).max()
+            self.shape.vertices *= 0.8
+            if self.deformation_model is not None:
+                self.verts = self.deform_points(self.shape.vertices)
+            else:
+                self.verts = self.shape.vertices
+            self.faces = self.shape.faces
+
         if self.config.visualize_deform_sample > 0 and self.deformation_model is not None:
             pts = torch.rand(self.config.visualize_deform_sample, 3, device=self.config.device) * 2 - 1
             deform = self.deformation_model.deform(pts) - pts
@@ -61,6 +75,13 @@ class SDFRenderer:
         f_volume = torch.cat(f_eval, dim=0).reshape(*([self.config.resolution] * 3))
         return f_volume
     
+    def sdf_functional(self, query):
+        sample = query
+        if self.deformation_model is not None and self.config.deform_mode == 'implicit':
+            sample = self.deformation_model.inverse(sample)  
+        model_out = self.shape_model(sample)
+        return model_out['dist']
+    
     def extract_mesh(self, level=0.0):
         try:
             verts, faces = mcubes.marching_cubes(self.cached_sdf, level)
@@ -70,21 +91,17 @@ class SDFRenderer:
             verts = np.empty([0, 3], dtype=np.float32)
             faces = np.empty([0, 3], dtype=np.int32)
         if self.deformation_model is not None and self.config.deform_mode == 'explicit':
-            verts = torch.from_numpy(verts).to(self.config.device, torch.float)
-            out_verts = []
-            for sample in torch.split(verts, self.config.chunk, dim=0):
-                transformed = self.deformation_model.deform(sample)  # transform(sample)
-                out_verts.append(transformed.cpu().detach().numpy())
-            verts = np.concatenate(out_verts, axis=0)
+            verts = self.deform_points(verts)
         return verts, faces
-        
-    def sdf_functional(self, query):
-        sample = query
-        if self.deformation_model is not None and self.config.deform_mode == 'implicit':
-            sample = self.deformation_model.inverse(sample)  
-        model_out = self.shape_model(sample)
-        return model_out['dist']
     
+    def deform_points(self, verts):
+        verts = torch.from_numpy(verts).to(self.config.device, torch.float)
+        out_verts = []
+        for sample in torch.split(verts, self.config.chunk, dim=0):
+            transformed = self.deformation_model.deform(sample)  # transform(sample)
+            out_verts.append(transformed.cpu().detach().numpy())
+        return np.concatenate(out_verts, axis=0)
+
     def project_nearest(self, query, n_its=5, level=0.0):
         query = torch.from_numpy(query).float().to(self.config.device).view(-1, 3).requires_grad_()
         for i in range(n_its):
@@ -105,7 +122,10 @@ class SDFRenderer:
         points_to_export = 'live'
         viewed_level_set = 0.0
         last_level_set = viewed_level_set
-        verts, faces = self.extract_mesh(level=0)
+        if self.config.shape_type == 'sdf':
+            verts, faces = self.extract_mesh(level=0)
+        elif self.config.shape_type == 'mesh':
+            verts, faces = self.verts, self.faces
         tx, ty, tz = 0.0, 0.0, 0.0
         rx, ry, rz = 0.0, 0.0, 0.0
         duplicate = False
@@ -123,8 +143,9 @@ class SDFRenderer:
                 world_pos = ps.screen_coords_to_world_position(screen_coords)
                 # print(world_pos)
                 if np.abs(world_pos).max() <= 1.0 and not np.isinf(world_pos).any():
-                    world_pos = self.project_nearest(world_pos, n_its=10, level=viewed_level_set
-                                                     ).squeeze().cpu().numpy()
+                    if self.config.shape_type == 'sdf':
+                        world_pos = self.project_nearest(world_pos, n_its=10, level=viewed_level_set
+                                                        ).squeeze().cpu().numpy()
                     live_picks.append(world_pos)
                     ps.register_point_cloud("Live Picks", np.stack(live_picks, axis=0), enabled=True)
                     # self.set_picked(np.expand_dims(world_pos, axis=0))
@@ -180,6 +201,8 @@ class SDFRenderer:
                 print(f"Loading points from {input_select}")
                 try:
                     loaded = np.loadtxt(input_select)
+                    if len(loaded.shape) < 2:
+                        loaded = loaded.reshape(1, 3)
                     live_picks += [x.squeeze() for x in np.split(loaded, loaded.shape[0], axis=0)]
                     ps.register_point_cloud("Live Picks", np.stack(live_picks, axis=0), enabled=True)
                 except:
@@ -259,6 +282,7 @@ class SDFRendererConfig(InstantiateConfig):
 
     _target: Type = field(default_factory=lambda: SDFRenderer)
     load_shape: Path = Path('./assets/weights/armadillo.pt')
+    shape_type: Literal['mesh', 'sdf'] = 'sdf'
     load_deformation: Path = None
     deform_mode: Literal['implicit', 'explicit', 'none'] = 'explicit'
     visualize_deform_sample: int = 0

@@ -39,6 +39,8 @@ class MLP(nn.Module):
         self.layer_width = config.layer_width
         self.skip_connections = config.skip_connections
         self._skip_connections: Set[int] = set(self.skip_connections) if self.skip_connections else set()
+        if 0 in self._skip_connections:
+            self._skip_connections.remove(0)
         self.activation = getattr(nn, config.activation)(**config.act_defaults)
         self.out_activation = config.out_activation
         if config.num_frequencies > 0:

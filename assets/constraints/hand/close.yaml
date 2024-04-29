@@ -1,0 +1,15 @@
+handles:
+  static:
+    positions:
+      - base
+  moving:
+    positions:
+      - tip_1
+      - tip_2
+      - tip_3
+      - tip_4
+    transform:
+      - tip_1_center
+      - tip_2_center
+      - tip_3_center
+      - tip_4_center
