@@ -1,11 +1,9 @@
 handles:
   static:
     positions:
-      - body_center
+      - tips_dense
   moving:
     positions:
       - head
-      - feet_back
     transform:
-      - head_down_side
-      - feet_back_rotate
+      - head_up_rotate

@@ -123,8 +123,8 @@ class DeformationLoss(nn.Module):
         transformed_verts = (rotations @ patch_verts[..., None]).squeeze(-1) + translations
         moving_pos = transformed_verts[moving_idx[:, 0], moving_idx[:, 1], :]
         static_pos = transformed_verts[static_idx[:, 0], static_idx[:, 1], :]
-        moving_handle_loss = self.handle_loss(moving_pos, moving_gt)
-        static_handle_loss = self.handle_loss(static_pos, static_gt)
+        moving_handle_loss = self.handle_loss(moving_pos, moving_gt) if moving_gt.shape[0] > 0 else 0.0
+        static_handle_loss = self.handle_loss(static_pos, static_gt) if static_gt.shape[0] > 0 else 0.0
 
         return {
             'arap_loss': patch_arap_loss * self.config.arap_loss_w,

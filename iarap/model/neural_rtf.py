@@ -99,4 +99,6 @@ class NeuralRTF(SDF):
     def inverse(self,
                 x_in: Float[Tensor, "*batch in_dim"],
                 ) -> Float[Tensor, "*batch in_dim"]:
+        if hasattr(self.network, 'inverse'):
+            return self.network.inverse(x_in)
         return fixed_point_Rt_invert(self.network, x_in)

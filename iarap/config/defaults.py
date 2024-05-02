@@ -3,7 +3,7 @@ import tyro
 from pathlib import Path
 
 from iarap.data.mesh import MeshDataConfig
-from iarap.model.nn.invertible import InvertibleMLP3DConfig
+from iarap.model.nn.invertible import InvertibleMLP3DConfig, InvertibleRtMLPConfig
 from iarap.model.nn.loss import DeformationLossConfig, IGRConfig
 from iarap.model.neural_rtf import NeuralRTFConfig
 from iarap.model.neural_sdf import NeuralSDFConfig
@@ -16,10 +16,10 @@ from iarap.train.sdf_trainer import SDFTrainerConfig
 
 
 
-train_sdf_entrypoint = SDFTrainerConfig(
+reconstruct_entrypoint = SDFTrainerConfig(
     num_steps=10000,
     data=MeshDataConfig(
-        file=Path('assets\\mesh\\TrollRghtHand.stl'),
+        file=Path('assets\\mesh\\chomper.stl'),
         uniform_ratio=1.0
     ),
     model=NeuralSDFConfig(),
@@ -37,10 +37,10 @@ train_sdf_entrypoint = SDFTrainerConfig(
     )
 )
 
-deform_sdf_entrypoint = DeformTrainerConfig(    
+deform_mesh_entrypoint = DeformTrainerConfig(    
     num_steps=1000,
-    pretrained_shape=Path('./assets/weights/sdf/hand.pt'),
-    handles_spec=Path('assets/constraints/hand/close.yaml'),
+    pretrained_shape=Path('./assets/weights/sdf/armadillo.pt'),
+    handles_spec=Path('assets/constraints/armadillo/arm_front.yaml'),
     delaunay_sample=30,
     zero_samples=1000,
     space_samples=1000,
@@ -68,13 +68,42 @@ deform_sdf_entrypoint = DeformTrainerConfig(
     loss=DeformationLossConfig(
         moving_handle_loss_w=1000,  # 1000, 
         static_handle_loss_w=1000,  # 1000, 
-        arap_loss_w=10
+        arap_loss_w=1000
     ),
     optimizer=AdamConfig(
         lr=1e-3
     ),
     scheduler=MultiStepSchedulerConfig()
 )
+
+deform_sdf_entrypoint = DeformTrainerConfig(    
+    num_steps=1000,
+    pretrained_shape=Path('./assets/weights/sdf/octopus.pt'),
+    handles_spec=Path('assets/constraints/octopus/extend_rotate_dense.yaml'),
+    delaunay_sample=30,
+    zero_samples=1000,
+    space_samples=1000,
+    attempts_per_step=10000,
+    near_surface_threshold=0.01,
+    domain_bounds=(-1, 1),
+    num_projections=5,
+    plane_coords_scale=0.03,  # 
+    device='cuda',
+    shape_model=NeuralSDFConfig(),
+    rotation_model=NeuralRTFConfig(
+        network=InvertibleMLP3DConfig()  # InvertibleRtMLPConfig()
+    ),
+    loss=DeformationLossConfig(
+        moving_handle_loss_w=1000,  # 1000, 
+        static_handle_loss_w=1000,  # 1000, 
+        arap_loss_w=1000
+    ),
+    optimizer=AdamConfig(
+        lr=1e-3
+    ),
+    scheduler=MultiStepSchedulerConfig()
+)
+
 '''
 deform_sdf_entrypoint = MCDeformTrainerConfig(    
     num_steps=1000,
@@ -99,13 +128,37 @@ deform_sdf_entrypoint = MCDeformTrainerConfig(
 )
 '''
 render_sdf_entrypoint = SDFRendererConfig(
-    load_shape=Path('assets/weights/sdf/hand.pt'),
-    # load_shape=Path('assets/weights/sdf/buddha.pt'),
+    load_shape=Path('assets/weights/sdf/octopus.pt'),
     shape_type='sdf',
+    deform_mode='implicit',
+    deformation_model=NeuralRTFConfig(
+        network=InvertibleMLP3DConfig()
+    ),
     # load_deformation=Path('wandb/run-20240304_160841-bh9r4jzt/files/checkpoints/neural_rotation.pt'),
     # load_deformation=Path('wandb/run-20240314_103509-58hdqszn/files/checkpoints/neural_rotation.pt'),
-    # load_deformation=Path('wandb/buddha_bust_rotate_L/files/checkpoints/neural_rotation.pt'),
-    load_deformation=Path('wandb/offline-run-20240429_194827-i7iwdf88/files/checkpoints/neural_rotation.pt'),
+    load_deformation=Path('wandb/offline-run-20240502_103738-119q8z40/files/checkpoints/neural_rotation.pt'),
+    chunk=300000,
+    resolution=512
+)
+
+render_mesh_entrypoint = SDFRendererConfig(
+    load_shape=Path('assets/mesh/octopus.stl'),
+    shape_type='mesh',
+    deformation_model=NeuralRTFConfig(
+        network=MLPConfig(
+            in_dim=3,
+            num_layers=8,
+            layer_width=256,
+            out_dim=6,
+            skip_connections=(4,),
+            activation='Softplus',
+            act_defaults={'beta': 100},
+            num_frequencies=6,
+            encoding_with_input=True,
+            geometric_init=True
+        )
+    ),
+    load_deformation=Path('wandb/octopus-extend_rotate-mlp/files/checkpoints/neural_rotation.pt'),
     chunk=300000,
     resolution=512
 )
@@ -121,9 +174,11 @@ animate_entrypoint = AnimatorConfig(
 
 
 Defaults = {
-    'train-sdf': train_sdf_entrypoint,
+    'reconstruct': reconstruct_entrypoint,
     'deform-sdf': deform_sdf_entrypoint,
+    'deform-mesh': deform_mesh_entrypoint,
     'render-sdf': render_sdf_entrypoint,
+    'render-mesh': render_mesh_entrypoint,
     'animate': animate_entrypoint
 }
 

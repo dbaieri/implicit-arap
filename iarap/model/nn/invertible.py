@@ -10,7 +10,7 @@ from typing import Any, Dict, Type, Tuple
 from iarap.config.base_config import InstantiateConfig
 from iarap.model.nn.encoding import FourierFeatsEncoding, LipBoundedPosEnc
 from iarap.model.nn.mlp import MLP, MLPConfig
-from iarap.utils.linalg import euler_to_rotation
+from iarap.utils.linalg import align_vectors, euler_to_rotation
 from iarap.utils.misc import to_immutable_dict
 
 
@@ -236,7 +236,7 @@ class InvertibleBlock(nn.Module):
                  hidden_dim, 
                  out_dim, 
                  num_blocks=1,
-                 activation=nn.Softplus(beta=100),
+                 activation=nn.ELU(),
                  num_freqs=None):
         super(InvertibleBlock, self).__init__()
         self.op = None
@@ -252,10 +252,10 @@ class InvertibleBlock(nn.Module):
             inp_dim_af_pe = in_dim
 
         self.blocks = nn.ModuleList()
-        self.blocks.append(nn.utils.spectral_norm(nn.Linear(inp_dim_af_pe, hidden_dim)))
+        self.blocks.append(nn.utils.parametrizations.spectral_norm(nn.Linear(inp_dim_af_pe, hidden_dim)))
         for _ in range(self.nblocks):
-            self.blocks.append(nn.utils.spectral_norm(nn.Linear(hidden_dim, hidden_dim)))
-        self.blocks.append(nn.utils.spectral_norm(nn.Linear(hidden_dim, out_dim)))
+            self.blocks.append(nn.utils.parametrizations.spectral_norm(nn.Linear(hidden_dim, hidden_dim)))
+        self.blocks.append(nn.utils.parametrizations.spectral_norm(nn.Linear(hidden_dim, out_dim)))
 
         self.activation = activation
 
@@ -320,35 +320,32 @@ class InvertibleResidualBlock(InvertibleBlock):
 class InvertibleRtMLP(nn.Module):
 
     def __init__(self, 
-                 config: InvertibleRtMLPConfig,):
+                 config: InvertibleRtMLPConfig):
         super(InvertibleRtMLP, self).__init__()
         self.in_dim = config.in_dim
         self.hidden_dim = config.layer_width
+        self.num_blocks = config.num_blocks
         self.num_g_blocks = config.num_g_blocks
         self.num_freqs = config.num_frequencies
         self.activation = getattr(nn, config.activation)(**config.act_defaults)
 
         # Network modules
         self.blocks = nn.ModuleList()
-        self.blocks.append(InvertibleRotBlock(self.in_dim, 
-                                              self.hidden_dim,
-                                              num_blocks=self.num_g_blocks, 
-                                              activation=self.activation,
-                                              num_freqs=self.num_freqs))
-        self.blocks.append(InvertibleResidualBlock(self.in_dim, 
-                                                   self.hidden_dim,
-                                                   num_blocks=self.num_g_blocks, 
-                                                   activation=self.activation,
-                                                   num_freqs=self.num_freqs))
+        for i in range(self.num_blocks):
+            self.blocks.append(InvertibleResidualBlock(self.in_dim, 
+                                                       self.hidden_dim,
+                                                       num_blocks=self.num_g_blocks, 
+                                                       activation=self.activation,
+                                                       num_freqs=self.num_freqs))
 
     def forward(self, x):
         out = x
-        out, euler = self.blocks[0](out)  
-        out, transl = self.blocks[-1](out)
-        
-        rot = euler_to_rotation(euler)
-        out_rt = (rot @ x[..., None]).squeeze(-1) + transl
-        return out_rt, rot, transl
+        for block in self.blocks:
+            out, _ = block(out)
+
+        rot = align_vectors(out, x)
+        transl = out - (rot @ x[..., None]).squeeze(-1).detach()
+        return out, rot, transl
 
     def inverse(self, y, verbose=False, iters=15):
         x = y
@@ -364,7 +361,7 @@ class InvertibleMLP3DConfig(InstantiateConfig):
 
     in_dim: int = 3
     num_blocks: int = 2
-    layer_width: int = 256
+    layer_width: int = 128
     num_layers: int = 3
     skip_connections: Tuple[int] = (0,)
     num_frequencies: int = 6
@@ -380,7 +377,8 @@ class InvertibleRtMLPConfig(InstantiateConfig):
 
     in_dim: int = 3
     layer_width: int = 256
-    num_frequencies: int = 6
-    num_g_blocks: int = 4
+    num_frequencies: int = 5
+    num_blocks: int = 6
+    num_g_blocks: int = 1
     activation: str = 'Softplus'
     act_defaults: Dict[str, Any] = to_immutable_dict({'beta': 100})

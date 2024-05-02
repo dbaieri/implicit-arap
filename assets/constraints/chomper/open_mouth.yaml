@@ -1,0 +1,16 @@
+handles:
+  static:
+    positions:
+      - base
+      - front_leaves
+  moving:
+    positions:
+      - back_leaf_center
+      - bottom_lip
+      - top_lip
+      - vine_tips
+    transform:
+      - back_leaf_bend
+      - bottom_lip_open
+      - top_lip_open
+      - vine_raise

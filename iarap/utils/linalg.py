@@ -90,5 +90,5 @@ def align_vectors(a, b):
 	v = torch.linalg.cross(a, b, dim=-1)
 	c = (b * a).sum(dim=-1)
 	cross_matrix = cross_skew_matrix(v)
-	scale = ((1 - c) / v.norm(dim=-1).pow(2)).view(*cross_matrix.shape[:-2], 1, 1)
+	scale = ((1 - c) / (v.norm(dim=-1).pow(2) + 1e-8)).view(*cross_matrix.shape[:-2], 1, 1)
 	return I + cross_matrix + (cross_matrix @ cross_matrix) * scale
