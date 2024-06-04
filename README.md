@@ -1,15 +1,21 @@
 # Implicit ARAP Deformations
 
-## Usage
+
+## Setup
+
+Our assets (meshes, neural net weights) are available at [this link](https://drive.google.com/drive/folders/1IeyV6yHG3dKm9IPMt7zIZxWql7DV9Vlw?usp=sharing). Please download the folder and extract it into the `assets/` directory.
 
 First, replicate and activate our conda environment using the provided env file.
 
 ```
-conda env create --file env.yaml
+conda env create --file env.yml
 conda activate sdfedit
 ```
 
 Then, feel free to set wandb in offline mode since it's only useful for debugging purposes.
+
+## Usage
+
 
 The codebase exposes three core commands: `train-sdf`, `deform-sdf` and `render-sdf`. These are invoked by running 
 
@@ -39,7 +45,7 @@ This will run a standard Neural SDF fitting procedure using a Softplus-activated
 
 Our Polyscope-based viewer is useful for defining deformation handles and inspecting results. The `--load_shape` option specifies a Neural SDF weights file. The network will be used to extract level set meshes via marching cubes, which will then be displayed on the live viewer. 
 
-Options in (1.1) allow to select which level set to visualize (the "Render" button has to be pushed after selecting the level set value).
+Options in (1.1) allow to select which level set to visualize (push the "Render" after selecting the level set value).
 
 By CTRL/Cmd + clicking on the displayed surface, the user can select points, which are added to the "Live Picks" point cloud (see (2)). Using the interactive commands in (1.3), the user can:
 
@@ -75,7 +81,3 @@ You may find such files in `assets/constraints/<shape>/<experiment>.yaml`. They 
     * Have same length as `handles.moving.positions`
     * Every point selection file in this list should contain the same number of points to the corresponding (same index) point selection file in `handles.moving.positions`
 
-
-## Code reference
-
-* https://github.com/OllieBoyne/pytorch-arap

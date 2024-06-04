@@ -39,8 +39,8 @@ reconstruct_entrypoint = SDFTrainerConfig(
 
 deform_mesh_entrypoint = DeformTrainerConfig(    
     num_steps=1000,
-    pretrained_shape=Path('./assets/weights/sdf/armadillo.pt'),
-    handles_spec=Path('assets/constraints/armadillo/arm_front.yaml'),
+    pretrained_shape=Path('./assets/weights/sdf/holed_sculpture.pt'),
+    handles_spec=Path('assets/constraints/holed_sculpture/bending.yaml'),
     delaunay_sample=30,
     zero_samples=1000,
     space_samples=1000,
@@ -68,7 +68,7 @@ deform_mesh_entrypoint = DeformTrainerConfig(
     loss=DeformationLossConfig(
         moving_handle_loss_w=1000,  # 1000, 
         static_handle_loss_w=1000,  # 1000, 
-        arap_loss_w=1000
+        arap_loss_w=10
     ),
     optimizer=AdamConfig(
         lr=1e-3
@@ -78,8 +78,8 @@ deform_mesh_entrypoint = DeformTrainerConfig(
 
 deform_sdf_entrypoint = DeformTrainerConfig(    
     num_steps=1000,
-    pretrained_shape=Path('./assets/weights/sdf/octopus.pt'),
-    handles_spec=Path('assets/constraints/octopus/extend_rotate_dense.yaml'),
+    pretrained_shape=Path('./assets/weights/sdf/armadillo.pt'),
+    handles_spec=Path('assets/constraints/armadillo/overlap.yaml'),
     delaunay_sample=30,
     zero_samples=1000,
     space_samples=1000,
@@ -104,12 +104,12 @@ deform_sdf_entrypoint = DeformTrainerConfig(
     scheduler=MultiStepSchedulerConfig()
 )
 
-'''
-deform_sdf_entrypoint = MCDeformTrainerConfig(    
+
+'''deform_mesh_entrypoint = MCDeformTrainerConfig(    
     num_steps=1000,
-    pretrained_shape=Path('./assets/weights/sdf/dino.pt'),
-    handles_spec=Path('assets/constraints/dino/arap_snout_experiment.yaml'),
-    mc_resolution=128,
+    pretrained_shape=Path('./assets/weights/sdf/buddha.pt'),
+    handles_spec=Path('assets/constraints/buddha/bust_rotation_L.yaml'),
+    mc_resolution=256,
     mc_level_bounds=(-0.1, 0.2),
     domain_bounds=(-1, 1),   
     device='cuda',
@@ -125,24 +125,23 @@ deform_sdf_entrypoint = MCDeformTrainerConfig(
         lr=1e-3
     ),
     scheduler=MultiStepSchedulerConfig()
-)
-'''
+)'''
+
+
 render_sdf_entrypoint = SDFRendererConfig(
-    load_shape=Path('assets/weights/sdf/octopus.pt'),
+    load_shape=Path('assets/weights/sdf/dragon.pt'),
     shape_type='sdf',
     deform_mode='implicit',
     deformation_model=NeuralRTFConfig(
         network=InvertibleMLP3DConfig()
     ),
-    # load_deformation=Path('wandb/run-20240304_160841-bh9r4jzt/files/checkpoints/neural_rotation.pt'),
-    # load_deformation=Path('wandb/run-20240314_103509-58hdqszn/files/checkpoints/neural_rotation.pt'),
-    load_deformation=Path('wandb/offline-run-20240502_103738-119q8z40/files/checkpoints/neural_rotation.pt'),
+    # load_deformation=Path('wandb/buddha-head_rotate-mlp/files/checkpoints/neural_rotation.pt'),
     chunk=300000,
     resolution=512
 )
 
 render_mesh_entrypoint = SDFRendererConfig(
-    load_shape=Path('assets/mesh/octopus.stl'),
+    load_shape=Path('assets/mesh/holed_sculpture.stl'),
     shape_type='mesh',
     deformation_model=NeuralRTFConfig(
         network=MLPConfig(
@@ -158,7 +157,7 @@ render_mesh_entrypoint = SDFRendererConfig(
             geometric_init=True
         )
     ),
-    load_deformation=Path('wandb/octopus-extend_rotate-mlp/files/checkpoints/neural_rotation.pt'),
+    # load_deformation=Path('wandb/armadillo-overlap-mlp/files/checkpoints/neural_rotation.pt'),
     chunk=300000,
     resolution=512
 )

@@ -1,9 +1,0 @@
-handles:
-  static:
-    positions:
-      - tips
-  moving:
-    positions:
-      - head
-    transform:
-      - head_up
