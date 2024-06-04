@@ -1,4 +1,4 @@
-# Implicit ARAP Deformations
+# Implicit-ARAP: Efficient Handle-Guided Deformation of High-Resolution Meshes and Neural Fields via Local Patch Meshing
 
 
 ## Setup
@@ -23,7 +23,7 @@ The codebase exposes three core commands: `train-sdf`, `deform-sdf` and `render-
 python run.py <command_name>
 ```
 
-Command line options for all three are defined by the entrypoint objects instantiated in [iarap/config/defaults.py](iarap/config/defaults.py). Each attribute can be overridden by CLI, and nested configs can be accessed via dots, e.g.: 
+Command line options for all three are defined by the entrypoint objects instantiated in [iarap/config/defaults.py](iarap/config/defaults.py). Each attribute can be overridden by CLI, and nested configs can be accessed via dot notation, e.g.: 
 
 ```
 python run.py train-sdf --optimizer.lr <value>
