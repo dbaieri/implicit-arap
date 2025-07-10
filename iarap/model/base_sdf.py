@@ -98,7 +98,7 @@ class SDF(nn.Module):
             while n_samples < num_samples:
                 unif = torch.rand(samples_per_step, 3, device=device) * (bounds[1] - bounds[0]) + bounds[0]
                 sdf = self.distance(unif)
-                close = unif[sdf.squeeze() < threshold, :]
+                close = unif[sdf.squeeze().abs() < threshold, :]
                 sampled_pts.append(close)
                 n_samples += close.shape[0]
         sampled_pts = torch.cat(sampled_pts, dim=0)[:num_samples, :]
